@@ -62,6 +62,9 @@ data class Match(
  */
 enum class MatchStatus {
     ACTIVE,    // 활성
+    ACCEPTED,  // 수락됨
+    REJECTED,  // 거부됨
+    ENDED,     // 종료됨
     EXPIRED,   // 만료
     CANCELLED  // 취소
 }

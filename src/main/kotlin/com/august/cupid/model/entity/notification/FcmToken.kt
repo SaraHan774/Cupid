@@ -56,5 +56,6 @@ data class FcmToken(
  */
 enum class DeviceType {
     IOS,     // iOS
-    ANDROID  // Android
+    ANDROID, // Android
+    WEB      // Web
 }
