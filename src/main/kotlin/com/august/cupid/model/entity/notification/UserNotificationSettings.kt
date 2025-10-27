@@ -22,9 +22,8 @@ import java.util.*
 )
 data class UserNotificationSettings(
     @Id
-    @JoinColumn(name = "user_id", nullable = false)
-    @OneToOne(fetch = FetchType.LAZY)
-    val user: User,
+    @Column(name = "user_id", nullable = false)
+    val userId: UUID,
 
     @Column(name = "enabled", nullable = false)
     val enabled: Boolean = true,

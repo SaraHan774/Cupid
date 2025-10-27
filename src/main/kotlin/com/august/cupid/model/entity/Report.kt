@@ -74,7 +74,10 @@ data class Report(
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "resolver_id")
-    val resolver: User? = null
+    val resolver: User? = null,
+
+    @Column(name = "updated_at")
+    var updatedAt: LocalDateTime = LocalDateTime.now()
 )
 
 /**

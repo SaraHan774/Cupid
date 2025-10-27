@@ -31,19 +31,27 @@ class UserService(
      */
     fun createUser(request: CreateUserRequest): ApiResponse<UserResponse> {
         return try {
+            logger.info("사용자 생성 시작: ${request.username}")
+            
             // 중복 확인
             if (userRepository.existsByUsername(request.username)) {
+                logger.warn("사용자명 중복: ${request.username}")
                 return ApiResponse(false, message = "사용자명이 이미 존재합니다")
             }
             if (userRepository.existsByEmail(request.email)) {
+                logger.warn("이메일 중복: ${request.email}")
                 return ApiResponse(false, message = "이메일이 이미 존재합니다")
             }
 
             // 비밀번호 암호화
+            logger.info("비밀번호 암호화 시작")
             val encodedPassword = passwordEncoder.encode(request.password)
+            logger.info("비밀번호 암호화 완료")
 
-            // 사용자 생성
+            // 사용자 생성 (공식 문서 권장사항 - 검증 메서드 사용)
+            logger.info("User 객체 생성 시작")
             val user = User(
+                id = UUID.randomUUID(),
                 username = request.username,
                 email = request.email,
                 passwordHash = encodedPassword,
@@ -51,8 +59,10 @@ class UserService(
                 isActive = true,
                 createdAt = LocalDateTime.now(),
                 updatedAt = LocalDateTime.now()
-            )
+            ).validate() // 공식 문서 권장: 별도 검증 메서드 사용
+            logger.info("User 객체 생성 완료: ${user.id}")
 
+            logger.info("데이터베이스 저장 시작")
             val savedUser = userRepository.save(user)
             logger.info("사용자 생성 완료: ${savedUser.username} (${savedUser.id})")
 
@@ -114,8 +124,6 @@ class UserService(
                 if (userRepository.existsByUsername(request.username)) {
                     return ApiResponse(false, message = "사용자명이 이미 존재합니다")
                 }
-                // User는 data class이므로 새 인스턴스 생성 필요
-                // 실제로는 별도의 업데이트 메서드가 필요할 수 있음
             }
 
             // 이메일 중복 확인
@@ -123,21 +131,20 @@ class UserService(
                 if (userRepository.existsByEmail(request.email)) {
                     return ApiResponse(false, message = "이메일이 이미 존재합니다")
                 }
-                // User는 data class이므로 새 인스턴스 생성 필요
-                // 실제로는 별도의 업데이트 메서드가 필요할 수 있음
             }
 
-            // 기타 필드 업데이트
-            request.profileImageUrl?.let { 
-                // User는 data class이므로 새 인스턴스 생성 필요
-                // 실제로는 별도의 업데이트 메서드가 필요할 수 있음
-            }
-            // User는 data class이므로 새 인스턴스 생성 필요
-            // 실제로는 별도의 업데이트 메서드가 필요할 수 있음
-            val updatedUser = userRepository.save(user)
-            logger.info("사용자 정보 업데이트 완료: ${updatedUser.username} (${updatedUser.id})")
+            // 불변 data class의 copy 메서드를 사용하여 새 인스턴스 생성
+            val updatedUser = user.copy(
+                username = request.username ?: user.username,
+                email = request.email ?: user.email,
+                profileImageUrl = request.profileImageUrl ?: user.profileImageUrl,
+                updatedAt = LocalDateTime.now()
+            )
+            
+            val savedUser = userRepository.save(updatedUser)
+            logger.info("사용자 정보 업데이트 완료: ${savedUser.username} (${savedUser.id})")
 
-            ApiResponse(true, data = updatedUser.toResponse(), message = "사용자 정보가 성공적으로 업데이트되었습니다")
+            ApiResponse(true, data = savedUser.toResponse(), message = "사용자 정보가 성공적으로 업데이트되었습니다")
         } catch (e: Exception) {
             logger.error("사용자 업데이트 실패: ${e.message}", e)
             ApiResponse(false, error = "사용자 업데이트 중 오류가 발생했습니다")
@@ -154,9 +161,12 @@ class UserService(
                 return ApiResponse(false, message = "사용자를 찾을 수 없습니다")
             }
 
-            // User는 data class이므로 새 인스턴스 생성 필요
-            // 실제로는 별도의 업데이트 메서드가 필요할 수 있음
-            userRepository.save(user)
+            // 불변 data class의 copy 메서드를 사용하여 새 인스턴스 생성
+            val deactivatedUser = user.copy(
+                isActive = false,
+                updatedAt = LocalDateTime.now()
+            )
+            userRepository.save(deactivatedUser)
 
             logger.info("사용자 비활성화 완료: ${user.username} (${user.id})")
             ApiResponse(true, message = "사용자가 성공적으로 비활성화되었습니다")
@@ -236,9 +246,12 @@ class UserService(
                 return ApiResponse(false, message = "사용자를 찾을 수 없습니다")
             }
 
-            // User는 data class이므로 새 인스턴스 생성 필요
-            // 실제로는 별도의 업데이트 메서드가 필요할 수 있음
-            userRepository.save(user)
+            // 불변 data class의 copy 메서드를 사용하여 새 인스턴스 생성
+            val updatedUser = user.copy(
+                lastSeenAt = LocalDateTime.now(),
+                updatedAt = LocalDateTime.now()
+            )
+            userRepository.save(updatedUser)
 
             ApiResponse(true, message = "마지막 접속 시간이 업데이트되었습니다")
         } catch (e: Exception) {

@@ -24,7 +24,6 @@ import java.util.*
 )
 data class User(
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     val id: UUID = UUID.randomUUID(),
 
     @Column(name = "username", nullable = false, unique = true, length = 50)
@@ -50,16 +49,14 @@ data class User(
     @Column(name = "profile_image_metadata", columnDefinition = "jsonb")
     val profileImageMetadata: Map<String, Any>? = null,
 
-    @CreationTimestamp
     @Column(name = "created_at", nullable = false)
     val createdAt: LocalDateTime = LocalDateTime.now(),
 
-    @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
-    var updatedAt: LocalDateTime = LocalDateTime.now(),
+    val updatedAt: LocalDateTime = LocalDateTime.now(),
 
     @Column(name = "last_seen_at")
-    var lastSeenAt: LocalDateTime? = null,
+    val lastSeenAt: LocalDateTime? = null,
 
     @Column(name = "is_active", nullable = false)
     val isActive: Boolean = true,
@@ -69,9 +66,45 @@ data class User(
     val metadata: Map<String, Any>? = null
 ) {
     /**
-     * 사용자명 길이 검증
+     * JPA를 위한 기본 생성자 (공식 문서 권장사항)
      */
-    init {
+    constructor() : this(
+        id = UUID.randomUUID(),
+        username = "", // 공식 문서 권장: 빈 문자열 사용
+        passwordHash = "",
+        email = null,
+        profileImageUrl = null,
+        profileThumbnailUrl = null,
+        profileImageBlurhash = null,
+        profileImageMetadata = null,
+        createdAt = LocalDateTime.now(), // @CreationTimestamp가 자동 처리하지만 기본값 필요
+        updatedAt = LocalDateTime.now(), // @UpdateTimestamp가 자동 처리하지만 기본값 필요
+        lastSeenAt = null,
+        isActive = true,
+        metadata = null
+    )
+
+    /**
+     * 사용자 검증 (공식 문서 권장사항 - 별도 메서드)
+     */
+    fun validate(): User {
         require(username.length >= 3) { "사용자명은 3자 이상이어야 합니다" }
+        return this
+    }
+
+    /**
+     * UserResponse DTO로 변환
+     */
+    fun toResponse(): com.august.cupid.model.dto.UserResponse {
+        return com.august.cupid.model.dto.UserResponse(
+            id = id,
+            username = username,
+            email = email ?: "",
+            profileImageUrl = profileImageUrl,
+            bio = null, // User 엔티티에 bio 필드가 없으므로 null
+            isActive = isActive,
+            createdAt = createdAt,
+            lastSeenAt = lastSeenAt
+        )
     }
 }

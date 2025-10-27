@@ -39,18 +39,19 @@ interface UserNotificationSettingsRepository : JpaRepository<UserNotificationSet
 
     /**
      * 현재 방해금지 시간인 사용자들 조회
+     * TODO: PostgreSQL 배열 쿼리 문제로 인해 임시로 비활성화
      */
-    @Query("""
-        SELECT uns FROM UserNotificationSettings uns 
-        WHERE uns.dndEnabled = true 
-        AND uns.enabled = true
-        AND (
-            (uns.dndStartTime <= uns.dndEndTime AND :currentTime >= uns.dndStartTime AND :currentTime <= uns.dndEndTime)
-            OR (uns.dndStartTime > uns.dndEndTime AND (:currentTime >= uns.dndStartTime OR :currentTime <= uns.dndEndTime))
-        )
-        AND :dayOfWeek MEMBER OF uns.dndDays
-    """)
-    fun findUsersInDndMode(@Param("currentTime") currentTime: LocalTime, @Param("dayOfWeek") dayOfWeek: Int): List<UserNotificationSettings>
+    // @Query("""
+    //     SELECT uns FROM UserNotificationSettings uns 
+    //     WHERE uns.dndEnabled = true 
+    //     AND uns.enabled = true
+    //     AND (
+    //         (uns.dndStartTime <= uns.dndEndTime AND :currentTime >= uns.dndStartTime AND :currentTime <= uns.dndEndTime)
+    //         OR (uns.dndStartTime > uns.dndEndTime AND (:currentTime >= uns.dndStartTime OR :currentTime <= uns.dndEndTime))
+    //     )
+    //     AND :dayOfWeek = ANY(uns.dndDays)
+    // """)
+    // fun findUsersInDndMode(@Param("currentTime") currentTime: LocalTime, @Param("dayOfWeek") dayOfWeek: Int): List<UserNotificationSettings>
 
     /**
      * 알림 미리보기가 활성화된 사용자들 조회
@@ -84,7 +85,7 @@ interface UserNotificationSettingsRepository : JpaRepository<UserNotificationSet
             uns.dndEndTime = :dndEndTime,
             uns.dndDays = :dndDays,
             uns.updatedAt = CURRENT_TIMESTAMP
-        WHERE uns.user.id = :userId
+        WHERE uns.userId = :userId
     """)
     fun updateNotificationSettings(
         @Param("userId") userId: UUID,
@@ -101,13 +102,13 @@ interface UserNotificationSettingsRepository : JpaRepository<UserNotificationSet
     /**
      * 알림 활성화 상태 토글
      */
-    @Query("UPDATE UserNotificationSettings uns SET uns.enabled = :enabled, uns.updatedAt = CURRENT_TIMESTAMP WHERE uns.user.id = :userId")
+    @Query("UPDATE UserNotificationSettings uns SET uns.enabled = :enabled, uns.updatedAt = CURRENT_TIMESTAMP WHERE uns.userId = :userId")
     fun toggleNotificationEnabled(@Param("userId") userId: UUID, @Param("enabled") enabled: Boolean): Int
 
     /**
      * 방해금지 모드 토글
      */
-    @Query("UPDATE UserNotificationSettings uns SET uns.dndEnabled = :dndEnabled, uns.updatedAt = CURRENT_TIMESTAMP WHERE uns.user.id = :userId")
+    @Query("UPDATE UserNotificationSettings uns SET uns.dndEnabled = :dndEnabled, uns.updatedAt = CURRENT_TIMESTAMP WHERE uns.userId = :userId")
     fun toggleDndMode(@Param("userId") userId: UUID, @Param("dndEnabled") dndEnabled: Boolean): Int
 
     /**

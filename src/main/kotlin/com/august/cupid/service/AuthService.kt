@@ -47,7 +47,11 @@ class AuthService(
             val expiresIn = jwtUtil.getExpirationTime(accessToken) ?: 86400000L
 
             // 마지막 접속 시간 업데이트
-            userRepository.save(user.copy(lastSeenAt = LocalDateTime.now()))
+            val updatedUser = user.copy(
+                lastSeenAt = LocalDateTime.now(),
+                updatedAt = LocalDateTime.now()
+            )
+            userRepository.save(updatedUser)
 
             logger.info("로그인 성공: ${user.username} (${user.id})")
 
@@ -157,7 +161,10 @@ class AuthService(
             val newPasswordHash = passwordEncoder.encode(request.newPassword)
 
             // 비밀번호 업데이트
-            val updatedUser = user.copy(passwordHash = newPasswordHash)
+            val updatedUser = user.copy(
+                passwordHash = newPasswordHash,
+                updatedAt = LocalDateTime.now()
+            )
             userRepository.save(updatedUser)
 
             logger.info("비밀번호 변경 완료: ${user.username} (${user.id})")

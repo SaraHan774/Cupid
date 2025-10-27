@@ -183,9 +183,10 @@ interface ReportRepository : JpaRepository<Report, UUID> {
 
     /**
      * 컨텍스트 메시지 ID가 포함된 신고들 조회
+     * TODO: PostgreSQL 배열 쿼리 문제로 인해 임시로 비활성화
      */
-    @Query("SELECT r FROM Report r WHERE :messageId MEMBER OF r.contextMessageIds")
-    fun findByContextMessageIdsContaining(@Param("messageId") messageId: UUID): List<Report>
+    // @Query("SELECT r FROM Report r WHERE :messageId MEMBER OF r.contextMessageIds")
+    // fun findByContextMessageIdsContaining(@Param("messageId") messageId: UUID): List<Report>
 
     /**
      * 신고 처리 시간 통계 조회

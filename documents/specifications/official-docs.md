@@ -135,9 +135,3 @@ class UserController(
 
 4. **마스터**: Pro Spring Boot 3 with Kotlin 책 읽기
    - 시간 날 때 조금씩
-
----
-
-내가 보기에 **제일 유용한 건 Spring 공식 Kotlin 문서**예요. 코드 샘플도 많고, Java와 비교하면서 볼 수 있어서 이해하기 쉬워요!
-
-필요하면 특정 주제(예: JPA, Security, Testing)에 대한 더 자세한 가이드도 찾아줄 수 있어요. 뭐가 궁금해? 😊

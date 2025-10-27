@@ -94,7 +94,7 @@ class NotificationService(
             var settings = userNotificationSettingsRepository.findByUserId(userId)
             if (settings == null) {
                 settings = UserNotificationSettings(
-                    user = user,
+                    userId = userId,
                     enabled = true,
                     soundEnabled = true,
                     vibrationEnabled = true,

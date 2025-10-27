@@ -138,7 +138,9 @@ class JwtUtil(
         return try {
             val claims = getClaimsFromToken(token)
             val tokenType = claims["tokenType"] as? String
-            !isTokenExpired(claims) && tokenType == "ACCESS"
+            val isNotExpired = !isTokenExpired(claims)
+            val isAccessToken = tokenType == "ACCESS"
+            isNotExpired && isAccessToken
         } catch (e: Exception) {
             logger.error("Access Token 유효성 검증 실패: ${e.message}", e)
             false
@@ -152,7 +154,9 @@ class JwtUtil(
         return try {
             val claims = getClaimsFromToken(token)
             val tokenType = claims["tokenType"] as? String
-            !isTokenExpired(claims) && tokenType == "REFRESH"
+            val isNotExpired = !isTokenExpired(claims)
+            val isRefreshToken = tokenType == "REFRESH"
+            isNotExpired && isRefreshToken
         } catch (e: Exception) {
             logger.error("Refresh Token 유효성 검증 실패: ${e.message}", e)
             false
@@ -209,9 +213,8 @@ class JwtUtil(
      * 토큰에서 Claims 추출
      */
     private fun getClaimsFromToken(token: String): Claims {
-        return Jwts.parserBuilder()
+        return Jwts.parser()
             .setSigningKey(key)
-            .build()
             .parseClaimsJws(token)
             .body
     }
