@@ -1,0 +1,52 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: chat-sdk-server
+    
+  # PostgreSQL 설정
+  datasource:
+    url: jdbc:postgresql://localhost:5432/chatsdk
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        
+  # MongoDB 설정
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/chatsdk
+      
+  # Redis 설정
+  redis:
+    host: localhost
+    port: 6379
+    timeout: 2000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+
+# Firebase 설정
+firebase:
+  credentials:
+    path: classpath:firebase-service-account.json
+
+# 로깅 설정
+logging:
+  level:
+    root: INFO
+    com.august.cupid: DEBUG
