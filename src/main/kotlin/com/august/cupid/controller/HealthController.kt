@@ -46,7 +46,7 @@ class HealthController(
             ResponseEntity.status(503).body(
                 mapOf(
                     "status" to "DOWN",
-                    "error" to e.message
+                    "error" to (e.message ?: "Unknown error")
                 )
             )
         }
