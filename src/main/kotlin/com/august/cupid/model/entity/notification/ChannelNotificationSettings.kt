@@ -55,7 +55,7 @@ data class ChannelNotificationSettings(
     val vibrationEnabled: Boolean = true,
 
     @JdbcTypeCode(SqlTypes.ARRAY)
-    @Column(name = "vibration_pattern", nullable = false, columnDefinition = "integer[]")
+    @Column(name = "vibration_pattern", nullable = false)
     val vibrationPattern: List<Int> = listOf(0, 250, 250, 250), // 밀리초 배열
 
     // 일시적 음소거

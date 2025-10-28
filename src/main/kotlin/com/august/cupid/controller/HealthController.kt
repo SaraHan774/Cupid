@@ -1,6 +1,8 @@
 package com.august.cupid.controller
 
 import com.google.firebase.messaging.FirebaseMessaging
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.tags.Tag
 import org.slf4j.LoggerFactory
 import org.springframework.data.mongodb.core.MongoTemplate
 import org.springframework.data.redis.core.RedisTemplate
@@ -18,6 +20,7 @@ import javax.sql.DataSource
  * Health Check API
  * 서버 상태, FCM 상태, 데이터베이스 연결 상태를 확인
  */
+@Tag(name = "Health", description = "서버 상태 및 시스템 헬스 체크 API")
 @RestController
 @RequestMapping("/api/v1")
 class HealthController(
@@ -29,6 +32,7 @@ class HealthController(
 
     private val logger = LoggerFactory.getLogger(javaClass)
 
+    @Operation(summary = "서버 상태 확인", description = "서버, FCM, 데이터베이스 연결 상태를 확인합니다")
     @GetMapping("/health")
     fun health(): ResponseEntity<Map<String, Any>> {
         return try {

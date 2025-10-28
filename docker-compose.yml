@@ -1,0 +1,106 @@
+services:
+  # PostgreSQL - 사용자, 채널, 알림 설정 등 저장
+  postgres:
+    image: postgres:15-alpine
+    container_name: cupid-postgres
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: chatsdk
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cupid-network
+
+  # MongoDB - 메시지 저장 (E2E 암호화)
+  mongodb:
+    image: mongo:7.0
+    container_name: cupid-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: chatsdk
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/chatsdk --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cupid-network
+
+  # Redis - 캐싱 및 온라인 상태 관리
+  redis:
+    image: redis:7-alpine
+    container_name: cupid-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass ""
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cupid-network
+
+  # pgAdmin (선택사항) - PostgreSQL 관리용
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: cupid-pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@cupid.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - cupid-network
+
+  # MongoDB Express (선택사항) - MongoDB 관리용
+  mongo-express:
+    image: mongo-express:latest
+    container_name: cupid-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongodb:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin
+    depends_on:
+      - mongodb
+    networks:
+      - cupid-network
+
+volumes:
+  postgres_data:
+    driver: local
+  mongodb_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  cupid-network:
+    driver: bridge

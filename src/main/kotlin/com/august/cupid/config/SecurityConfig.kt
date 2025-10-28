@@ -51,6 +51,9 @@ class SecurityConfig(
                         "/ws/**",
                         "/static/**",               // 정적 파일 공개
                         "/websocket-test.html",     // 테스트 페이지 공개
+                        "/swagger-ui/**",           // Swagger UI
+                        "/swagger-ui.html",         // Swagger UI 메인 페이지
+                        "/v3/api-docs/**",          // OpenAPI 문서
                         "/error"
                     ).permitAll()
                     // WebSocket 엔드포인트

@@ -1,6 +1,8 @@
 package com.august.cupid.controller
 
 import com.august.cupid.service.OnlineStatusService
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.tags.Tag
 import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.*
  * 2. 온라인 사용자 목록 조회
  * 3. 온라인 상태 통계 조회
  */
+@Tag(name = "Online Status", description = "사용자 온라인 상태 조회 API")
 @RestController
 @RequestMapping("/api/v1/online-status")
 class OnlineStatusController(
@@ -27,6 +30,7 @@ class OnlineStatusController(
      * @param userId 확인할 사용자 ID
      * @return 온라인 여부
      */
+    @Operation(summary = "사용자 온라인 상태 확인", description = "특정 사용자의 온라인 상태를 확인합니다")
     @GetMapping("/users/{userId}")
     fun checkUserOnlineStatus(@PathVariable userId: String): ResponseEntity<Map<String, Any>> {
         return try {
@@ -85,6 +89,7 @@ class OnlineStatusController(
      * 
      * @return 온라인 사용자 목록
      */
+    @Operation(summary = "온라인 사용자 목록 조회", description = "현재 온라인 상태인 모든 사용자 목록을 조회합니다")
     @GetMapping("/users")
     fun getOnlineUsers(): ResponseEntity<Map<String, Any>> {
         return try {
@@ -113,6 +118,7 @@ class OnlineStatusController(
      * 
      * @return 온라인 상태 통계 정보
      */
+    @Operation(summary = "온라인 상태 통계 조회", description = "온라인 사용자 수 및 상태 통계를 조회합니다")
     @GetMapping("/stats")
     fun getOnlineStatusStats(): ResponseEntity<Map<String, Any>> {
         return try {

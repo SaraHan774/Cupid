@@ -56,6 +56,9 @@ dependencies {
     testImplementation("com.h2database:h2")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    
+    // Embedded MongoDB for testing
+    testImplementation("de.flapdoodle.embed:de.flapdoodle.embed.mongo:4.11.0")
 }
 
 kotlin {

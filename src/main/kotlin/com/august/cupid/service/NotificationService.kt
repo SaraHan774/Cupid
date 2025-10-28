@@ -1,5 +1,6 @@
 package com.august.cupid.service
 
+import com.august.cupid.fcm.FcmDeliveryService
 import com.august.cupid.model.dto.*
 import com.august.cupid.model.entity.notification.FcmToken
 import com.august.cupid.model.entity.notification.DeviceType
@@ -33,7 +34,8 @@ class NotificationService(
     private val channelNotificationSettingsRepository: ChannelNotificationSettingsRepository,
     private val userRepository: UserRepository,
     private val channelRepository: ChannelRepository,
-    private val firebaseMessaging: FirebaseMessaging
+    private val firebaseMessaging: FirebaseMessaging,
+    private val fcmDeliveryService: FcmDeliveryService
 ) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -214,19 +216,13 @@ class NotificationService(
                 // 음소거 확인
                 if (member.mutedUntil != null && member.mutedUntil.isAfter(currentTime)) continue
 
-                // 알림 전송
-                val sent = sendNotificationToUser(
+                // Silent Push 전송 (FcmDeliveryService 사용)
+                val sent = fcmDeliveryService.sendSilentPush(
                     userId = member.user.id,
-                    title = "새 메시지",
-                    body = "${sender.username}: $messageContent",
-                    data = mapOf(
-                        "type" to "MESSAGE",
-                        "channelId" to channelId.toString(),
-                        "senderId" to senderId.toString(),
-                        "messageType" to messageType
-                    ),
-                    soundEnabled = member.soundEnabled,
-                    vibrationEnabled = member.vibrationEnabled
+                    type = "new_message",
+                    channelId = channelId,
+                    senderId = senderId,
+                    encryptedContent = messageContent
                 )
 
                 if (sent) successCount++
@@ -409,6 +405,67 @@ class NotificationService(
         } catch (e: Exception) {
             logger.error("알림 통계 조회 실패: ${e.message}", e)
             ApiResponse(false, error = "알림 통계 조회 중 오류가 발생했습니다")
+        }
+    }
+
+    /**
+     * FCM 토큰 목록 조회
+     */
+    @Transactional(readOnly = true)
+    fun getFcmTokens(userId: UUID): ApiResponse<List<FcmToken>> {
+        return try {
+            val user = userRepository.findById(userId).orElse(null)
+            if (user == null) {
+                return ApiResponse(false, message = "사용자를 찾을 수 없습니다")
+            }
+
+            val tokens = fcmTokenRepository.findByUserAndIsActiveTrue(user)
+            ApiResponse(true, data = tokens, message = "${tokens.size}개의 토큰이 등록되어 있습니다")
+        } catch (e: Exception) {
+            logger.error("FCM 토큰 목록 조회 실패: userId={}", userId, e)
+            ApiResponse(false, error = "FCM 토큰 목록 조회 중 오류가 발생했습니다")
+        }
+    }
+
+    /**
+     * FCM 토큰 삭제
+     */
+    fun deleteFcmToken(userId: UUID, tokenId: UUID): ApiResponse<String> {
+        return try {
+            val token = fcmTokenRepository.findById(tokenId).orElse(null)
+            if (token == null) {
+                return ApiResponse(false, message = "토큰을 찾을 수 없습니다")
+            }
+
+            // 사용자 소유 확인
+            if (token.user.id != userId) {
+                return ApiResponse(false, message = "권한이 없습니다")
+            }
+
+            fcmTokenRepository.deactivateToken(token.token)
+            logger.info("FCM 토큰 삭제 완료: tokenId={}, userId={}", tokenId, userId)
+            ApiResponse(true, message = "FCM 토큰이 삭제되었습니다")
+        } catch (e: Exception) {
+            logger.error("FCM 토큰 삭제 실패: tokenId={}, userId={}", tokenId, userId, e)
+            ApiResponse(false, error = "FCM 토큰 삭제 중 오류가 발생했습니다")
+        }
+    }
+
+    /**
+     * 사용자 알림 설정 조회
+     */
+    @Transactional(readOnly = true)
+    fun getUserNotificationSettings(userId: UUID): ApiResponse<UserNotificationSettings?> {
+        return try {
+            val settings = userNotificationSettingsRepository.findByUserId(userId)
+            if (settings == null) {
+                // 기본값 반환
+                return ApiResponse(true, data = null, message = "설정이 없습니다 (기본값 적용)")
+            }
+            ApiResponse(true, data = settings)
+        } catch (e: Exception) {
+            logger.error("사용자 알림 설정 조회 실패: userId={}", userId, e)
+            ApiResponse(false, error = "알림 설정 조회 중 오류가 발생했습니다")
         }
     }
 }

@@ -1,0 +1,58 @@
+# Build artifacts
+build/
+out/
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Gradle
+.gradle/
+gradle-wrapper.jar
+
+# Logs
+*.log
+logs/
+server.log
+server_debug.log
+detailed_log.log
+
+# Test files
+test-websocket-connection.sh
+debug-websocket.sh
+
+# Documentation
+docs-archive/
+*.md
+!README.md
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Environment
+.env
+*.properties
+!application.properties
+!application-test.properties
+
+# Firebase (should not be in Docker image in production)
+firebase-service-account.json
+firebase-test.json
