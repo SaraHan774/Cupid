@@ -15,10 +15,12 @@ import java.util.*
 /**
  * JWT 인증 필터
  * 요청 헤더에서 JWT 토큰을 추출하고 인증 처리
+ * 토큰 블랙리스트 검증 포함
  */
 @Component
 class JwtAuthenticationFilter(
-    private val jwtUtil: JwtUtil
+    private val jwtUtil: JwtUtil,
+    private val tokenBlacklistService: TokenBlacklistService
 ) : OncePerRequestFilter() {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -34,7 +36,15 @@ class JwtAuthenticationFilter(
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
                 val token = jwtUtil.removeBearerPrefix(authHeader)
                 
-                // 토큰 유효성 검증
+                // 1. 토큰 블랙리스트 확인 (로그아웃된 토큰인지 체크)
+                if (tokenBlacklistService.isTokenBlacklisted(token)) {
+                    logger.warn("블랙리스트된 토큰으로 인증 시도")
+                    response.status = HttpServletResponse.SC_UNAUTHORIZED
+                    response.writer.write("{\"success\":false,\"error\":\"토큰이 무효화되었습니다\"}")
+                    return
+                }
+                
+                // 2. 토큰 유효성 검증
                 if (jwtUtil.validateAccessToken(token)) {
                     val userId = jwtUtil.getUserIdFromToken(token)
                     val username = jwtUtil.getUsernameFromToken(token)

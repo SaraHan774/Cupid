@@ -52,6 +52,27 @@ jwt:
   expiration: 86400000 # 24시간 (밀리초)
   refresh-expiration: 604800000 # 7일 (밀리초)
 
+# Rate Limiting 설정
+rate-limit:
+  enabled: true
+  # 각 엔드포인트별 허용 횟수
+  limits:
+    login:
+      requests: 5
+      window-minutes: 1
+    register:
+      requests: 3
+      window-hours: 1
+    message:
+      requests: 50
+      window-minutes: 1
+    general:
+      requests: 100
+      window-minutes: 1
+    websocket:
+      requests: 5
+      window-minutes: 1
+
 # 로깅 설정
 logging:
   level:

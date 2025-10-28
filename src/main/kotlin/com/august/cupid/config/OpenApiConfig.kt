@@ -1,12 +1,15 @@
 package com.august.cupid.config
 
+import io.swagger.v3.oas.annotations.enums.SecuritySchemeIn
+import io.swagger.v3.oas.annotations.enums.SecuritySchemeType
+import io.swagger.v3.oas.annotations.security.SecurityScheme
 import io.swagger.v3.oas.models.Components
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.info.Contact
 import io.swagger.v3.oas.models.info.Info
 import io.swagger.v3.oas.models.info.License
 import io.swagger.v3.oas.models.security.SecurityRequirement
-import io.swagger.v3.oas.models.security.SecurityScheme
+import io.swagger.v3.oas.models.security.SecurityScheme as SecuritySchemeModel
 import io.swagger.v3.oas.models.servers.Server
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -19,6 +22,13 @@ import org.springframework.context.annotation.Configuration
  * - API Docs JSON: http://localhost:8080/v3/api-docs
  */
 @Configuration
+@SecurityScheme(
+    name = "bearerAuth",
+    type = SecuritySchemeType.HTTP,
+    scheme = "bearer",
+    bearerFormat = "JWT",
+    `in` = SecuritySchemeIn.HEADER
+)
 class OpenApiConfig {
 
     @Bean
@@ -33,7 +43,7 @@ class OpenApiConfig {
                 Components()
                     .addSecuritySchemes("bearerAuth", securityScheme())
             )
-            .addSecurityItem(SecurityRequirement().addList("bearerAuth"))
+            // 전역 Security Requirement 제거 - 각 엔드포인트에서 개별 설정
     }
 
     private fun apiInfo(): Info {
@@ -51,10 +61,11 @@ class OpenApiConfig {
                 - E2E 암호화 (Signal Protocol)
 
                 ### 인증 방법
-                1. `/api/v1/auth/register` 또는 `/api/v1/auth/login` 으로 JWT 토큰 발급
-                2. 우측 상단 "Authorize" 버튼 클릭
-                3. `Bearer {token}` 형식으로 입력
-                4. "Authorize" 클릭 후 API 테스트
+                1. `/api/v1/auth/register` 또는 `/api/v1/auth/login` 으로 JWT 토큰 발급 받기
+                2. Swagger UI 우측 상단 "Authorize 🔓" 버튼 클릭
+                3. 발급받은 토큰을 입력 (Bearer는 자동 추가됨)
+                4. "Authorize" 클릭하여 인증 완료
+                5. 이제 인증이 필요한 모든 API를 테스트할 수 있습니다
 
                 ### WebSocket 연결
                 - 엔드포인트: `ws://localhost:8080/ws?userId={userId}`
@@ -75,13 +86,11 @@ class OpenApiConfig {
             )
     }
 
-    private fun securityScheme(): SecurityScheme {
-        return SecurityScheme()
-            .type(SecurityScheme.Type.HTTP)
+    private fun securityScheme(): SecuritySchemeModel {
+        return SecuritySchemeModel()
+            .type(SecuritySchemeModel.Type.HTTP)
             .scheme("bearer")
             .bearerFormat("JWT")
-            .`in`(SecurityScheme.In.HEADER)
-            .name("Authorization")
-            .description("JWT 토큰을 입력하세요. 'Bearer ' 접두사는 자동으로 추가됩니다.")
+            .description("JWT 토큰을 입력하세요. 토큰 앞에 'Bearer '를 붙이면 자동으로 제거됩니다.")
     }
 }

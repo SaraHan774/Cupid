@@ -3,6 +3,7 @@ package com.august.cupid.service
 import com.august.cupid.model.dto.*
 import com.august.cupid.model.entity.User
 import com.august.cupid.repository.UserRepository
+import com.august.cupid.security.TokenBlacklistService
 import com.august.cupid.util.JwtUtil
 import org.slf4j.LoggerFactory
 import org.springframework.security.crypto.password.PasswordEncoder
@@ -20,7 +21,8 @@ import java.util.*
 class AuthService(
     private val userRepository: UserRepository,
     private val passwordEncoder: PasswordEncoder,
-    private val jwtUtil: JwtUtil
+    private val jwtUtil: JwtUtil,
+    private val tokenBlacklistService: TokenBlacklistService
 ) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -167,9 +169,12 @@ class AuthService(
             )
             userRepository.save(updatedUser)
 
-            logger.info("비밀번호 변경 완료: ${user.username} (${user.id})")
+            // 모든 기존 토큰 무효화 (비밀번호 변경 시 보안 강화)
+            tokenBlacklistService.invalidateAllUserTokens(userId.toString())
+            
+            logger.info("비밀번호 변경 완료: ${user.username} (${user.id}), 모든 세션 무효화됨")
 
-            ApiResponse(true, message = "비밀번호가 성공적으로 변경되었습니다")
+            ApiResponse(true, message = "비밀번호가 성공적으로 변경되었습니다. 모든 세션이 로그아웃되었습니다")
         } catch (e: Exception) {
             logger.error("비밀번호 변경 실패: ${e.message}", e)
             ApiResponse(false, error = "비밀번호 변경 중 오류가 발생했습니다")
@@ -177,9 +182,9 @@ class AuthService(
     }
 
     /**
-     * 로그아웃 (클라이언트 측에서 토큰 삭제)
+     * 로그아웃 (토큰을 블랙리스트에 추가하여 무효화)
      */
-    fun logout(userId: UUID): ApiResponse<String> {
+    fun logout(userId: UUID, token: String?): ApiResponse<String> {
         return try {
             // 사용자 존재 확인
             val user = userRepository.findById(userId).orElse(null)
@@ -187,7 +192,13 @@ class AuthService(
                 return ApiResponse(false, message = "사용자를 찾을 수 없습니다")
             }
 
-            logger.info("로그아웃 완료: ${user.username} (${user.id})")
+            // 토큰이 제공된 경우 블랙리스트에 추가
+            if (token != null) {
+                tokenBlacklistService.addTokenToBlacklist(token)
+                logger.info("로그아웃 완료: ${user.username} (${user.id}), 토큰 무효화됨")
+            } else {
+                logger.info("로그아웃 완료: ${user.username} (${user.id})")
+            }
 
             ApiResponse(true, message = "로그아웃이 성공적으로 완료되었습니다")
         } catch (e: Exception) {

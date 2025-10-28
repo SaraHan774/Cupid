@@ -1,5 +1,8 @@
 package com.august.cupid.model.dto
 
+import jakarta.validation.constraints.Email
+import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Size
 import java.time.LocalDateTime
 import java.util.*
 
@@ -7,10 +10,23 @@ import java.util.*
  * 사용자 생성 요청 DTO
  */
 data class CreateUserRequest(
+    @field:NotBlank(message = "사용자명은 필수입니다")
+    @field:Size(min = 3, max = 50, message = "사용자명은 3-50자 사이여야 합니다")
     val username: String,
+    
+    @field:NotBlank(message = "이메일은 필수입니다")
+    @field:Email(message = "유효한 이메일 형식이 아닙니다")
+    @field:Size(max = 255, message = "이메일은 255자 이하여야 합니다")
     val email: String,
+    
+    @field:NotBlank(message = "비밀번호는 필수입니다")
+    @field:Size(min = 8, max = 100, message = "비밀번호는 8-100자 사이여야 합니다")
     val password: String,
+    
+    @field:Size(max = 500, message = "프로필 이미지 URL은 500자 이하여야 합니다")
     val profileImageUrl: String? = null,
+    
+    @field:Size(max = 500, message = "자기소개는 500자 이하여야 합니다")
     val bio: String? = null
 )
 
@@ -65,8 +81,14 @@ data class ChannelResponse(
  */
 data class SendMessageRequest(
     val channelId: UUID,
+    
+    @field:NotBlank(message = "메시지 내용은 필수입니다")
+    @field:Size(max = 10000, message = "메시지 내용은 10,000자 이하여야 합니다")
     val encryptedContent: String,
+    
+    @field:Size(max = 20, message = "메시지 타입은 20자 이하여야 합니다")
     val messageType: String = "TEXT", // TEXT, IMAGE, FILE, SYSTEM
+    
     val fileMetadata: FileMetadataDto? = null,
     val replyToMessageId: UUID? = null
 )
@@ -75,10 +97,21 @@ data class SendMessageRequest(
  * 파일 메타데이터 DTO
  */
 data class FileMetadataDto(
+    @field:NotBlank(message = "파일명은 필수입니다")
+    @field:Size(max = 255, message = "파일명은 255자 이하여야 합니다")
     val fileName: String,
+    
     val fileSize: Long,
+    
+    @field:NotBlank(message = "MIME 타입은 필수입니다")
+    @field:Size(max = 100, message = "MIME 타입은 100자 이하여야 합니다")
     val mimeType: String,
+    
+    @field:NotBlank(message = "파일 URL은 필수입니다")
+    @field:Size(max = 500, message = "파일 URL은 500자 이하여야 합니다")
     val fileUrl: String,
+    
+    @field:Size(max = 500, message = "썸네일 URL은 500자 이하여야 합니다")
     val thumbnailUrl: String? = null
 )
 

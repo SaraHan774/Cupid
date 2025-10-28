@@ -1,5 +1,6 @@
 package com.august.cupid.websocket
 
+import com.august.cupid.security.TokenBlacklistService
 import com.august.cupid.util.JwtUtil
 import org.slf4j.LoggerFactory
 import org.springframework.data.redis.core.RedisTemplate
@@ -16,12 +17,14 @@ import java.util.concurrent.TimeUnit
  * 기능:
  * 1. WebSocket 연결 시 Redis에 온라인 상태 저장 (5분 TTL)
  * 2. 연결 해제 시 Redis에서 온라인 상태 제거
- * 3. JWT 토큰에서 사용자 ID 추출
+ * 3. JWT 토큰에서 사용자 ID 추출 (보안 강화)
  * 4. 하트비트로 연결 상태 갱신
  */
 @Component
 class ConnectionInterceptor(
-    private val redisTemplate: RedisTemplate<String, String>
+    private val redisTemplate: RedisTemplate<String, String>,
+    private val jwtUtil: JwtUtil,
+    private val tokenBlacklistService: TokenBlacklistService
 ) : HandshakeInterceptor {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -49,23 +52,42 @@ class ConnectionInterceptor(
         try {
             logger.info("WebSocket 핸드셰이크 시작: URI={}", request.uri)
             
-            // 테스트를 위해 쿼리 파라미터에서 사용자 ID 추출
-            val userId = extractUserIdFromQuery(request)
-            if (userId == null) {
-                logger.warn("WebSocket 연결 실패: 사용자 ID를 추출할 수 없습니다. URI={}", request.uri)
+            // 1. JWT 토큰 추출
+            val token = extractTokenFromRequest(request)
+            if (token == null) {
+                logger.warn("WebSocket 연결 실패: JWT 토큰이 없습니다. URI={}", request.uri)
                 return false
             }
 
-            logger.info("사용자 ID 추출 성공: userId={}", userId)
+            // 2. JWT 토큰 블랙리스트 확인
+            if (tokenBlacklistService.isTokenBlacklisted(token)) {
+                logger.warn("WebSocket 연결 실패: 블랙리스트된 토큰입니다. URI={}", request.uri)
+                return false
+            }
 
-            // 세션 ID 생성 (WebSocket 세션 추적용)
-            val sessionId = generateSessionId(userId)
+            // 3. JWT 토큰 검증
+            if (!jwtUtil.validateAccessToken(token)) {
+                logger.warn("WebSocket 연결 실패: 유효하지 않은 JWT 토큰입니다. URI={}", request.uri)
+                return false
+            }
 
-            // Redis에 온라인 상태 저장
-            setUserOnlineStatus(userId, sessionId)
+            // 4. JWT 토큰에서 사용자 ID 추출
+            val userId = jwtUtil.getUserIdFromToken(token)
+            if (userId == null) {
+                logger.warn("WebSocket 연결 실패: 토큰에서 사용자 ID를 추출할 수 없습니다. URI={}", request.uri)
+                return false
+            }
 
-            // WebSocket 세션에 사용자 정보 저장
-            attributes["userId"] = userId
+            logger.info("JWT 토큰 검증 및 사용자 ID 추출 성공: userId={}", userId)
+
+            // 5. 세션 ID 생성 (WebSocket 세션 추적용)
+            val sessionId = generateSessionId(userId.toString())
+
+            // 6. Redis에 온라인 상태 저장
+            setUserOnlineStatus(userId.toString(), sessionId)
+
+            // 7. WebSocket 세션에 사용자 정보 저장
+            attributes["userId"] = userId.toString()
             attributes["sessionId"] = sessionId
 
             logger.info("WebSocket 연결 성공: userId={}, sessionId={}", userId, sessionId)

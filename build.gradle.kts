@@ -28,9 +28,14 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-mongodb")
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
     implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("org.springframework.boot:spring-boot-starter-validation")
     
     // PostgreSQL Driver
     implementation("org.postgresql:postgresql")
+    
+    // Rate Limiting (Bucket4j)
+    implementation("com.bucket4j:bucket4j-core:8.7.0")
+    implementation("com.bucket4j:bucket4j-redis:8.7.0")
     
     // JWT
     implementation("io.jsonwebtoken:jjwt-api:0.11.5")
@@ -55,6 +60,9 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-data-jpa")
     testImplementation("com.h2database:h2")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+    testImplementation("io.mockk:mockk:1.13.8")
+    testImplementation("org.springframework:spring-websocket")
+    testImplementation("org.springframework:spring-messaging")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     
     // Embedded MongoDB for testing

@@ -5,7 +5,9 @@ import com.august.cupid.service.AuthService
 import com.august.cupid.service.UserService
 import com.august.cupid.util.JwtUtil
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
 import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
@@ -30,9 +32,13 @@ class AuthController(
     /**
      * 로그인
      */
-    @Operation(summary = "로그인", description = "사용자 로그인 및 JWT 토큰 발급")
+    @Operation(
+        summary = "로그인", 
+        description = "사용자 로그인 및 JWT 토큰 발급",
+        security = []
+    )
     @PostMapping("/login")
-    fun login(@RequestBody request: LoginRequest): ResponseEntity<ApiResponse<LoginResponse>> {
+    fun login(@Valid @RequestBody request: LoginRequest): ResponseEntity<ApiResponse<LoginResponse>> {
         logger.info("로그인 시도: ${request.username}")
         
         val result = authService.login(request)
@@ -46,9 +52,13 @@ class AuthController(
     /**
      * 회원가입
      */
-    @Operation(summary = "회원가입", description = "새 사용자 등록")
+    @Operation(
+        summary = "회원가입", 
+        description = "새 사용자 등록",
+        security = []
+    )
     @PostMapping("/register")
-    fun register(@RequestBody request: CreateUserRequest): ResponseEntity<ApiResponse<UserResponse>> {
+    fun register(@Valid @RequestBody request: CreateUserRequest): ResponseEntity<ApiResponse<UserResponse>> {
         logger.info("회원가입 시도: ${request.username}")
         
         val result = userService.createUser(request)
@@ -64,7 +74,7 @@ class AuthController(
      */
     @Operation(summary = "토큰 갱신", description = "Access Token을 Refresh Token으로 갱신")
     @PostMapping("/refresh")
-    fun refreshToken(@RequestBody request: RefreshTokenRequest): ResponseEntity<ApiResponse<RefreshTokenResponse>> {
+    fun refreshToken(@Valid @RequestBody request: RefreshTokenRequest): ResponseEntity<ApiResponse<RefreshTokenResponse>> {
         logger.info("토큰 갱신 시도")
         
         val result = authService.refreshToken(request)
@@ -95,7 +105,11 @@ class AuthController(
     /**
      * 현재 사용자 정보 조회
      */
-    @Operation(summary = "현재 사용자 조회", description = "로그인한 사용자의 정보를 조회합니다")
+    @Operation(
+        summary = "현재 사용자 조회", 
+        description = "로그인한 사용자의 정보를 조회합니다",
+        security = [SecurityRequirement(name = "bearerAuth")]
+    )
     @GetMapping("/me")
     fun getCurrentUser(authentication: Authentication): ResponseEntity<ApiResponse<UserResponse>> {
         val userId = UUID.fromString(authentication.name)
@@ -112,10 +126,14 @@ class AuthController(
     /**
      * 비밀번호 변경
      */
-    @Operation(summary = "비밀번호 변경", description = "사용자 비밀번호를 변경합니다")
+    @Operation(
+        summary = "비밀번호 변경", 
+        description = "사용자 비밀번호를 변경합니다",
+        security = [SecurityRequirement(name = "bearerAuth")]
+    )
     @PostMapping("/change-password")
     fun changePassword(
-        @RequestBody request: ChangePasswordRequest,
+        @Valid @RequestBody request: ChangePasswordRequest,
         authentication: Authentication
     ): ResponseEntity<ApiResponse<String>> {
         val userId = UUID.fromString(authentication.name)
@@ -132,13 +150,23 @@ class AuthController(
     /**
      * 로그아웃
      */
-    @Operation(summary = "로그아웃", description = "사용자 로그아웃 처리")
+    @Operation(
+        summary = "로그아웃", 
+        description = "사용자 로그아웃 처리 (토큰 블랙리스트 추가)",
+        security = [SecurityRequirement(name = "bearerAuth")]
+    )
     @PostMapping("/logout")
-    fun logout(authentication: Authentication): ResponseEntity<ApiResponse<String>> {
+    fun logout(
+        authentication: Authentication,
+        @RequestHeader("Authorization", required = false) authHeader: String?
+    ): ResponseEntity<ApiResponse<String>> {
         val userId = UUID.fromString(authentication.name)
         logger.info("로그아웃: $userId")
         
-        val result = authService.logout(userId)
+        // Authorization 헤더에서 토큰 추출 (블랙리스트에 추가하기 위해)
+        val token = authHeader?.let { jwtUtil.removeBearerPrefix(it) }
+        
+        val result = authService.logout(userId, token)
         return if (result.success) {
             ResponseEntity.ok(result)
         } else {
@@ -149,7 +177,11 @@ class AuthController(
     /**
      * 사용자 정보 업데이트
      */
-    @Operation(summary = "프로필 업데이트", description = "사용자 프로필 정보를 업데이트합니다")
+    @Operation(
+        summary = "프로필 업데이트", 
+        description = "사용자 프로필 정보를 업데이트합니다",
+        security = [SecurityRequirement(name = "bearerAuth")]
+    )
     @PutMapping("/profile")
     fun updateProfile(
         @RequestBody request: UpdateUserRequest,
@@ -169,7 +201,11 @@ class AuthController(
     /**
      * 마지막 접속 시간 업데이트
      */
-    @Operation(summary = "접속 시간 업데이트", description = "사용자의 마지막 접속 시간을 업데이트합니다")
+    @Operation(
+        summary = "접속 시간 업데이트", 
+        description = "사용자의 마지막 접속 시간을 업데이트합니다",
+        security = [SecurityRequirement(name = "bearerAuth")]
+    )
     @PostMapping("/ping")
     fun ping(authentication: Authentication): ResponseEntity<ApiResponse<String>> {
         val userId = UUID.fromString(authentication.name)
