@@ -47,7 +47,10 @@ class SecurityConfig(
                     .requestMatchers(
                         "/api/v1/auth/**",
                         "/api/v1/health",
+                        "/api/v1/online-status/**",  // 온라인 상태 API 공개
                         "/ws/**",
+                        "/static/**",               // 정적 파일 공개
+                        "/websocket-test.html",     // 테스트 페이지 공개
                         "/error"
                     ).permitAll()
                     // WebSocket 엔드포인트
