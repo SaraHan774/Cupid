@@ -1,7 +1,10 @@
 package com.august.cupid.config
 
+import com.august.cupid.websocket.ConnectionInterceptor
+import com.august.cupid.websocket.StompChannelInterceptor
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Configuration
+import org.springframework.messaging.simp.config.ChannelRegistration
 import org.springframework.messaging.simp.config.MessageBrokerRegistry
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry
@@ -13,7 +16,10 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
  */
 @Configuration
 @EnableWebSocketMessageBroker
-class WebSocketConfig : WebSocketMessageBrokerConfigurer {
+class WebSocketConfig(
+    private val connectionInterceptor: ConnectionInterceptor,
+    private val stompChannelInterceptor: StompChannelInterceptor
+) : WebSocketMessageBrokerConfigurer {
 
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -40,9 +46,19 @@ class WebSocketConfig : WebSocketMessageBrokerConfigurer {
     override fun registerStompEndpoints(registry: StompEndpointRegistry) {
         // WebSocket 엔드포인트: /ws
         registry.addEndpoint("/ws")
-            .setAllowedOrigins("*")  // CORS 설정 (개발 환경용)
+            .addInterceptors(connectionInterceptor)  // ConnectionInterceptor 등록
+            .setAllowedOriginPatterns("*")  // CORS 설정 (개발 환경용 - allowCredentials 사용 시 필요)
             .withSockJS()  // SockJS fallback 지원
-        
-        logger.info("WebSocket 엔드포인트 등록 완료: /ws")
+
+        logger.info("WebSocket 엔드포인트 등록 완료: /ws (with ConnectionInterceptor)")
+    }
+
+    /**
+     * Client Inbound Channel 설정
+     * STOMP 메시지를 받을 때 사용되는 채널에 인터셉터 등록
+     */
+    override fun configureClientInboundChannel(registration: ChannelRegistration) {
+        registration.interceptors(stompChannelInterceptor)
+        logger.info("STOMP 채널 인터셉터 등록 완료")
     }
 }
