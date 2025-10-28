@@ -38,6 +38,11 @@ class MessageService(
      */
     fun sendMessage(request: SendMessageRequest, senderId: UUID): ApiResponse<MessageResponse> {
         return try {
+            // channelId 검증
+            if (request.channelId == null) {
+                return ApiResponse(false, message = "채널 ID는 필수입니다")
+            }
+
             // 발신자 존재 확인
             val sender = userRepository.findById(senderId).orElse(null)
             if (sender == null) {

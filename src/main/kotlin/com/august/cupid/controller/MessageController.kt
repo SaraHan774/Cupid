@@ -121,10 +121,11 @@ class MessageController(
         
         return try {
             val channelIdUuid = UUID.fromString(channelId)
-            
-            // channelId를 설정 (URL path variable이 우선)
-            val messageRequest = request.copy(channelId = channelIdUuid)
-            
+
+            // channelId를 설정 (URL path variable이 우선, 없으면 request body에서 가져옴)
+            val finalChannelId = request.channelId ?: channelIdUuid
+            val messageRequest = request.copy(channelId = finalChannelId)
+
             // MessageService로 메시지 저장
             val result = messageService.sendMessage(messageRequest, userId)
             

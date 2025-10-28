@@ -67,6 +67,12 @@ class ChatController(
                 return
             }
 
+            // channelId 검증
+            if (request.channelId == null) {
+                logger.warn("메시지 전송 실패: channelId가 null입니다")
+                return
+            }
+
             logger.info("메시지 전송 요청: userId={}, channelId={}", userId, request.channelId)
 
             // 메시지 저장

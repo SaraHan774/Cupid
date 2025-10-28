@@ -80,15 +80,15 @@ data class ChannelResponse(
  * 메시지 전송 요청 DTO
  */
 data class SendMessageRequest(
-    val channelId: UUID,
-    
+    val channelId: UUID? = null, // URL path에서 제공될 수 있으므로 nullable
+
     @field:NotBlank(message = "메시지 내용은 필수입니다")
     @field:Size(max = 10000, message = "메시지 내용은 10,000자 이하여야 합니다")
     val encryptedContent: String,
-    
+
     @field:Size(max = 20, message = "메시지 타입은 20자 이하여야 합니다")
     val messageType: String = "TEXT", // TEXT, IMAGE, FILE, SYSTEM
-    
+
     val fileMetadata: FileMetadataDto? = null,
     val replyToMessageId: UUID? = null
 )
