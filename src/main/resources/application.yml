@@ -18,7 +18,7 @@ spring:
   # JPA 설정
   jpa:
     hibernate:
-      ddl-auto: create
+      ddl-auto: update  # create에서 update로 변경 - 데이터 유지
     show-sql: true
     properties:
       hibernate:
@@ -52,25 +52,25 @@ jwt:
   expiration: 86400000 # 24시간 (밀리초)
   refresh-expiration: 604800000 # 7일 (밀리초)
 
-# Rate Limiting 설정
+# Rate Limiting 설정 (테스트용으로 완화)
 rate-limit:
   enabled: true
   # 각 엔드포인트별 허용 횟수
   limits:
     login:
-      requests: 5
-      window-minutes: 1
-    register:
-      requests: 3
-      window-hours: 1
-    message:
-      requests: 50
-      window-minutes: 1
-    general:
       requests: 100
       window-minutes: 1
+    register:
+      requests: 50
+      window-hours: 1
+    message:
+      requests: 1000
+      window-minutes: 1
+    general:
+      requests: 500
+      window-minutes: 1
     websocket:
-      requests: 5
+      requests: 100
       window-minutes: 1
 
 # 로깅 설정

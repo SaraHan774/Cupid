@@ -1,0 +1,343 @@
+/* 전역 스타일 - 최소한의 디자인 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f5f5f5;
+}
+
+.screen {
+    width: 100%;
+    height: 100vh;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* 로그인 화면 */
+#loginScreen {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #fff;
+}
+
+.container {
+    width: 400px;
+    padding: 20px;
+    border: 1px solid #ddd;
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+/* 탭 */
+.tab-container {
+    display: flex;
+    margin-bottom: 20px;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 10px;
+    background-color: #f5f5f5;
+    border: 1px solid #ddd;
+    cursor: pointer;
+}
+
+.tab-btn.active {
+    background-color: #007bff;
+    color: white;
+}
+
+/* 폼 */
+.form {
+    display: none;
+}
+
+.form.active {
+    display: block;
+}
+
+.form input {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #ddd;
+}
+
+.form button {
+    width: 100%;
+    padding: 10px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+
+.error {
+    color: red;
+    margin-top: 10px;
+    font-size: 14px;
+}
+
+/* 메인 화면 */
+#mainScreen {
+    display: flex;
+    flex-direction: column;
+}
+
+header {
+    background-color: #007bff;
+    color: white;
+    padding: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header button {
+    padding: 5px 15px;
+    background-color: white;
+    color: #007bff;
+    border: none;
+    cursor: pointer;
+}
+
+.main-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* 사이드바 */
+aside {
+    width: 250px;
+    background-color: white;
+    border-right: 1px solid #ddd;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-header {
+    padding: 15px;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.sidebar-header h2 {
+    font-size: 18px;
+}
+
+.sidebar-header button {
+    width: 30px;
+    height: 30px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    cursor: pointer;
+    border-radius: 50%;
+}
+
+.channel-list {
+    overflow-y: auto;
+    flex: 1;
+}
+
+.channel-item {
+    padding: 15px;
+    border-bottom: 1px solid #ddd;
+    cursor: pointer;
+}
+
+.channel-item:hover {
+    background-color: #f5f5f5;
+}
+
+.channel-item.active {
+    background-color: #e3f2fd;
+}
+
+.channel-name {
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.channel-type {
+    font-size: 12px;
+    color: #666;
+}
+
+/* 메시지 영역 */
+main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: white;
+}
+
+.no-selection {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #666;
+}
+
+.chat-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.chat-header {
+    padding: 15px;
+    border-bottom: 1px solid #ddd;
+}
+
+.messages-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+    background-color: #f9f9f9;
+}
+
+.message {
+    margin-bottom: 15px;
+    padding: 10px;
+    background-color: white;
+    border-left: 3px solid #007bff;
+}
+
+.message.sent {
+    background-color: #e3f2fd;
+}
+
+.message-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+}
+
+.message-sender {
+    font-weight: bold;
+    color: #007bff;
+}
+
+.message-time {
+    font-size: 12px;
+    color: #666;
+}
+
+.message-content {
+    word-wrap: break-word;
+}
+
+.message-input-container {
+    display: flex;
+    padding: 15px;
+    border-top: 1px solid #ddd;
+}
+
+.message-input-container input {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid #ddd;
+}
+
+.message-input-container button {
+    padding: 10px 20px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    cursor: pointer;
+    margin-left: 10px;
+}
+
+/* 다이얼로그 */
+.dialog {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.dialog-content {
+    background-color: white;
+    padding: 20px;
+    width: 400px;
+}
+
+.dialog-content h3 {
+    margin-bottom: 15px;
+}
+
+.dialog-content input,
+.dialog-content select {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #ddd;
+}
+
+.dialog-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.dialog-buttons button {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    cursor: pointer;
+}
+
+.dialog-buttons button:first-child {
+    background-color: #007bff;
+    color: white;
+}
+
+.dialog-buttons button:last-child {
+    background-color: #ddd;
+}
+
+.dialog-hint {
+    font-size: 12px;
+    color: #666;
+    margin: 10px 0;
+    padding: 10px;
+    background-color: #f5f5f5;
+    border-radius: 4px;
+}
+
+/* 추가 개선사항 */
+.form button:hover,
+.message-input-container button:hover,
+.sidebar-header button:hover,
+.dialog-buttons button:first-child:hover {
+    opacity: 0.9;
+}
+
+.dialog-buttons button:last-child:hover {
+    background-color: #ccc;
+}
+
+header button:hover {
+    background-color: #f5f5f5;
+}
+

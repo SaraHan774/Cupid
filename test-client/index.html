@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cupid Chat Test Client</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- 로그인 화면 -->
+    <div id="loginScreen" class="screen">
+        <div class="container">
+            <h1>Cupid Chat Test</h1>
+            
+            <div class="tab-container">
+                <button class="tab-btn active" onclick="showTab('login')">로그인</button>
+                <button class="tab-btn" onclick="showTab('register')">회원가입</button>
+            </div>
+
+            <!-- 로그인 폼 -->
+            <div id="loginForm" class="form active">
+                <input type="text" id="loginUsername" placeholder="사용자명" />
+                <input type="password" id="loginPassword" placeholder="비밀번호" />
+                <button onclick="login()">로그인</button>
+                <div id="loginError" class="error"></div>
+            </div>
+
+            <!-- 회원가입 폼 -->
+            <div id="registerForm" class="form">
+                <input type="text" id="registerUsername" placeholder="사용자명" required />
+                <input type="password" id="registerPassword" placeholder="비밀번호" required />
+                <input type="email" id="registerEmail" placeholder="이메일" required />
+                <button onclick="register()">회원가입</button>
+                <div id="registerError" class="error"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 메인 채팅 화면 -->
+    <div id="mainScreen" class="screen hidden">
+        <!-- 헤더 -->
+        <header>
+            <span id="currentUser">사용자</span>
+            <button onclick="logout()">로그아웃</button>
+        </header>
+
+        <div class="main-content">
+            <!-- 사이드바: 채널 목록 -->
+            <aside id="channelsSidebar">
+                <div class="sidebar-header">
+                    <h2>채널</h2>
+                    <button onclick="showCreateChannelDialog()">+</button>
+                </div>
+                
+                <div class="channel-list" id="channelList">
+                    <p>채널을 불러오는 중...</p>
+                </div>
+            </aside>
+
+            <!-- 메시지 영역 -->
+            <main id="messagesArea">
+                <div id="noChannelSelected" class="no-selection">
+                    <p>채널을 선택하세요</p>
+                </div>
+
+                <div id="chatArea" class="hidden">
+                    <div class="chat-header">
+                        <h3 id="currentChannelName">채널명</h3>
+                        <span id="currentChannelType"></span>
+                    </div>
+
+                    <div class="messages-container" id="messagesContainer">
+                        <!-- 메시지들이 여기에 표시됨 -->
+                    </div>
+
+                    <div class="message-input-container">
+                        <input type="text" id="messageInput" placeholder="메시지를 입력하세요..." />
+                        <button onclick="sendMessage()">전송</button>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- 채널 생성 다이얼로그 -->
+    <div id="createChannelDialog" class="dialog hidden">
+        <div class="dialog-content">
+            <h3>새 채널 생성</h3>
+            <input type="text" id="channelName" placeholder="채널명 (선택사항)" />
+            <select id="channelType">
+                <option value="GROUP">그룹 채팅</option>
+                <option value="DIRECT">1:1 채팅</option>
+            </select>
+            <p class="dialog-hint">* 현재 자신만 포함된 채널이 생성됩니다</p>
+            <div class="dialog-buttons">
+                <button onclick="createChannel()">생성</button>
+                <button onclick="closeCreateChannelDialog()">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- WebSocket 라이브러리 로드 -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    
+    <!-- 메인 스크립트 -->
+    <script src="app.js"></script>
+</body>
+</html>
+
