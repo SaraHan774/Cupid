@@ -25,14 +25,15 @@ import java.util.*
 data class Channel(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    val id: UUID = UUID.randomUUID(),
+    @Column(columnDefinition = "uuid")
+    val id: UUID? = null,  // null이면 persist, 값이 있으면 merge
 
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false, length = 20)
     val type: ChannelType,
 
     @Column(name = "name", length = 255)
-    val name: String? = null,
+    val name: String?,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "creator_id", nullable = false)
@@ -40,15 +41,19 @@ data class Channel(
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "match_id")
-    val match: Match? = null,
+    val match: Match?,
 
     @CreationTimestamp
-    @Column(name = "created_at", nullable = false)
+    @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: LocalDateTime = LocalDateTime.now(),
 
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     var updatedAt: LocalDateTime = LocalDateTime.now(),
+
+    @Version
+    @Column(name = "version")
+    val version: Long? = null,  // 낙관적 락을 위한 버전 필드
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "metadata", columnDefinition = "jsonb")

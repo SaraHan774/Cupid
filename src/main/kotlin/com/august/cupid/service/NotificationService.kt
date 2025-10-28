@@ -55,29 +55,36 @@ class NotificationService(
 
             // 기존 토큰 확인
             val existingToken = fcmTokenRepository.findByToken(request.token)
-            if (existingToken != null) {
-                // 기존 토큰 삭제 후 새로 생성 (data class이므로 업데이트 불가)
-                fcmTokenRepository.delete(existingToken)
-            }
             
-            // 새 토큰 생성
-            val fcmToken = FcmToken(
-                user = user,
-                token = request.token,
-                deviceType = deviceType,
-                deviceName = request.deviceName,
-                appVersion = request.appVersion,
-                isActive = true,
-                lastUsedAt = LocalDateTime.now()
-            )
-            fcmTokenRepository.save(fcmToken)
+            if (existingToken != null) {
+                // 기존 토큰이 있으면 lastUsedAt만 업데이트 (Repository 메서드 사용)
+                logger.info("기존 FCM 토큰 업데이트: ${existingToken.id}")
+                val now = LocalDateTime.now()
+                fcmTokenRepository.updateLastUsedAt(request.token, now)
+                // @Modifying이 필요하지만 이미 정의되어 있음
+            } else {
+                // 새 토큰 생성
+                val fcmToken = FcmToken(
+                    user = user,
+                    token = request.token,
+                    deviceType = deviceType,
+                    deviceName = request.deviceName,
+                    appVersion = request.appVersion,
+                    lastUsedAt = LocalDateTime.now()
+                )
+                fcmTokenRepository.save(fcmToken)
+            }
 
             logger.info("FCM 토큰 등록 완료: 사용자 ${user.username} (${userId})")
 
             ApiResponse(true, message = "FCM 토큰이 성공적으로 등록되었습니다")
+        } catch (e: IllegalArgumentException) {
+            logger.error("FCM 토큰 등록 실패 - 잘못된 파라미터: ${e.message}")
+            ApiResponse(false, error = "잘못된 device type: ${request.deviceType}")
         } catch (e: Exception) {
-            logger.error("FCM 토큰 등록 실패: ${e.message}", e)
-            ApiResponse(false, error = "FCM 토큰 등록 중 오류가 발생했습니다")
+            logger.error("FCM 토큰 등록 실패", e)
+            e.printStackTrace()
+            ApiResponse(false, error = "FCM 토큰 등록 중 오류가 발생했습니다: ${e.message}")
         }
     }
 
@@ -93,33 +100,30 @@ class NotificationService(
             }
 
             // 기존 설정 조회 또는 생성
-            var settings = userNotificationSettingsRepository.findByUserId(userId)
-            if (settings == null) {
-                settings = UserNotificationSettings(
-                    userId = userId,
-                    enabled = true,
-                    soundEnabled = true,
-                    vibrationEnabled = true,
-                    showPreview = true,
-                    dndEnabled = false,
-                    createdAt = LocalDateTime.now(),
-                    updatedAt = LocalDateTime.now()
-                )
+            val existingSettings = userNotificationSettingsRepository.findByUserId(userId)
+            
+            // 기존 설정이 있으면 삭제 후 새로 생성 (data class의 불변성 문제 해결)
+            if (existingSettings != null) {
+                userNotificationSettingsRepository.delete(existingSettings)
+                userNotificationSettingsRepository.flush()
             }
-
-            // 설정 업데이트 (data class이므로 새 인스턴스 생성)
-            val updatedSettings = settings.copy(
+            
+            // 새 설정 생성
+            val updatedSettings = UserNotificationSettings(
+                userId = userId,
                 enabled = request.enabled,
                 soundEnabled = request.soundEnabled,
                 vibrationEnabled = request.vibrationEnabled,
                 showPreview = request.showPreview,
                 dndEnabled = request.dndEnabled,
-                dndStartTime = if (request.dndStartTime != null) LocalTime.parse(request.dndStartTime, DateTimeFormatter.ofPattern("HH:mm")) else settings.dndStartTime,
-                dndEndTime = if (request.dndEndTime != null) LocalTime.parse(request.dndEndTime, DateTimeFormatter.ofPattern("HH:mm")) else settings.dndEndTime,
-                dndDays = request.dndDays ?: settings.dndDays,
+                dndStartTime = if (request.dndStartTime != null) LocalTime.parse(request.dndStartTime, DateTimeFormatter.ofPattern("HH:mm")) else LocalTime.of(22, 0),
+                dndEndTime = if (request.dndEndTime != null) LocalTime.parse(request.dndEndTime, DateTimeFormatter.ofPattern("HH:mm")) else LocalTime.of(8, 0),
+                dndDays = request.dndDays ?: listOf(1, 2, 3, 4, 5, 6, 7),
+                createdAt = LocalDateTime.now(),
                 updatedAt = LocalDateTime.now()
             )
-            userNotificationSettingsRepository.save(updatedSettings)
+            
+            userNotificationSettingsRepository.saveAndFlush(updatedSettings)
 
             logger.info("사용자 알림 설정 업데이트 완료: ${user.username} (${userId})")
 

@@ -9,6 +9,7 @@ import com.august.cupid.repository.ChannelRepository
 import com.august.cupid.repository.ChannelMembersRepository
 import com.august.cupid.repository.UserRepository
 import com.august.cupid.repository.MatchRepository
+import jakarta.persistence.EntityManager
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
@@ -27,7 +28,8 @@ class ChannelService(
     private val channelRepository: ChannelRepository,
     private val channelMembersRepository: ChannelMembersRepository,
     private val userRepository: UserRepository,
-    private val matchRepository: MatchRepository
+    private val matchRepository: MatchRepository,
+    private val entityManager: EntityManager
 ) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -63,15 +65,17 @@ class ChannelService(
                 matchRepository.findById(request.matchId).orElse(null)
             } else null
 
-            // 채널 생성
+            // 채널 생성 - ID, createdAt, updatedAt는 JPA가 자동 생성 (기본값 사용)
             val channel = Channel(
-                name = request.name,
                 type = channelType,
+                name = request.name,
                 creator = creator,
                 match = match
             )
 
+            // repository.save()는 새로운 엔티티면 persist, 기존 엔티티면 merge를 자동으로 처리
             val savedChannel = channelRepository.save(channel)
+            channelRepository.flush()
 
             // 생성자를 채널 멤버로 추가
             val channelMember = ChannelMembers(
@@ -303,7 +307,7 @@ class ChannelService(
      */
     private fun Channel.toResponse(): ChannelResponse {
         return ChannelResponse(
-            id = this.id,
+            id = this.id!!,
             name = this.name,
             type = this.type.name,
             creatorId = this.creator.id,

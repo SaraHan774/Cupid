@@ -45,6 +45,13 @@ class RateLimitFilter(
             return
         }
         
+        // 테스트 스크립트 요청은 Rate Limit 제외 (X-Test-Script 헤더)
+        val testScriptHeader = request.getHeader("X-Test-Script")
+        if (testScriptHeader == "true") {
+            filterChain.doFilter(request, response)
+            return
+        }
+        
         // Health check 엔드포인트는 Rate Limit 제외
         if (request.requestURI == "/api/v1/health") {
             filterChain.doFilter(request, response)

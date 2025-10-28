@@ -349,7 +349,7 @@ class MatchService(
      */
     private fun com.august.cupid.model.entity.Channel.toResponse(): ChannelResponse {
         return ChannelResponse(
-            id = this.id,
+            id = this.id!!,
             name = this.name,
             type = this.type.name,
             creatorId = this.creator.id,

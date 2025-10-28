@@ -20,15 +20,16 @@ import java.util.*
     ],
     uniqueConstraints = [
         UniqueConstraint(
-            name = "unique_active_membership",
-            columnNames = ["channel_id", "user_id", "is_active"]
+            name = "uq_channel_members_channel_user",
+            columnNames = ["channel_id", "user_id"]
         )
     ]
 )
-data class ChannelMembers(
+class ChannelMembers(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    val id: UUID = UUID.randomUUID(),
+    @Column(columnDefinition = "uuid")
+    val id: UUID? = null,  // null이면 persist, 값이 있으면 merge
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "channel_id", nullable = false)
@@ -40,7 +41,7 @@ data class ChannelMembers(
 
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
-    val role: ChannelRole = ChannelRole.MEMBER,
+    var role: ChannelRole = ChannelRole.MEMBER,
 
     @CreationTimestamp
     @Column(name = "joined_at", nullable = false)
@@ -53,7 +54,11 @@ data class ChannelMembers(
     var lastReadAt: LocalDateTime? = null,
 
     @Column(name = "is_active", nullable = false)
-    val isActive: Boolean = true
+    var isActive: Boolean = true,
+
+    @Version
+    @Column(name = "version")
+    val version: Long? = null  // 낙관적 락을 위한 버전 필드
 )
 
 /**

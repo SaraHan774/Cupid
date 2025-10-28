@@ -31,11 +31,26 @@ class FirebaseConfig {
             if (FirebaseApp.getApps().isEmpty()) {
                 logger.info("Firebase App 초기화 시작: $credentialsPath")
                 
+                // 서비스 계정 파일에서 데이터 읽기
                 val credentialsStream = ResourceUtils.getURL(credentialsPath).openStream()
-                val credentials = GoogleCredentials.fromStream(credentialsStream)
+                val serviceAccountJson = credentialsStream.use {
+                    it.readBytes().toString(Charsets.UTF_8)
+                }
+                
+                // JSON 파싱하여 project_id 추출
+                val projectId = com.fasterxml.jackson.databind.ObjectMapper().readTree(serviceAccountJson)
+                    .get("project_id")?.asText()
+                
+                logger.info("Firebase Project ID: $projectId")
+                
+                // Credentials 생성 (stream을 다시 생성)
+                val credentials = GoogleCredentials.fromStream(
+                    ResourceUtils.getURL(credentialsPath).openStream()
+                )
                 
                 val options = FirebaseOptions.builder()
                     .setCredentials(credentials)
+                    .setProjectId(projectId)
                     .build()
                 
                 val app = FirebaseApp.initializeApp(options)

@@ -70,8 +70,27 @@ class HealthController(
      */
     private fun checkFCMStatus(): Map<String, Any> {
         return try {
+            // Firebase Apps 상태 확인
+            val apps = com.google.firebase.FirebaseApp.getApps()
+            logger.debug("Firebase Apps 개수: ${apps.size}")
+            logger.debug("FirebaseMessaging Bean 상태: ${if (firebaseMessaging != null) "available" else "null"}")
+            
+            // Firebase App이 없으면 초기화 안됨
+            if (apps.isEmpty()) {
+                logger.warn("Firebase App이 초기화되지 않았습니다")
+                return mapOf(
+                    "status" to "DOWN",
+                    "initialized" to false,
+                    "messagingAvailable" to (firebaseMessaging != null),
+                    "error" to "Firebase App이 초기화되지 않음",
+                    "projectInfo" to emptyMap<String, String>()
+                )
+            }
+            
             val firebaseApp = com.google.firebase.FirebaseApp.getInstance()
             val projectId = firebaseApp.options.projectId
+            
+            logger.debug("Firebase App: ${firebaseApp.name}, Project ID: $projectId")
             
             // Firebase App 초기화 상태 확인
             val isInitialized = firebaseApp != null && projectId != null
@@ -108,7 +127,7 @@ class HealthController(
                 "status" to "DOWN",
                 "error" to (e.message ?: "Unknown error"),
                 "initialized" to false,
-                "messagingAvailable" to false
+                "messagingAvailable" to (firebaseMessaging != null)
             )
         }
     }

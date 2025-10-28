@@ -4,6 +4,7 @@ import com.august.cupid.model.entity.notification.FcmToken
 import com.august.cupid.model.entity.notification.DeviceType
 import com.august.cupid.model.entity.User
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
@@ -74,6 +75,7 @@ interface FcmTokenRepository : JpaRepository<FcmToken, UUID> {
     /**
      * 토큰 마지막 사용 시간 업데이트
      */
+    @Modifying
     @Query("UPDATE FcmToken ft SET ft.lastUsedAt = :lastUsedAt WHERE ft.token = :token")
     fun updateLastUsedAt(@Param("token") token: String, @Param("lastUsedAt") lastUsedAt: LocalDateTime): Int
 
