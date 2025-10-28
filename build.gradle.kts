@@ -42,7 +42,10 @@ dependencies {
     
     // Signal Protocol for end-to-end encryption
     implementation("org.whispersystems:signal-protocol-java:2.8.1")
-    
+
+    // API Documentation (SpringDoc OpenAPI)
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.3.0")
+
     // Kotlin
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")

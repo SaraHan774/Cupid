@@ -59,3 +59,15 @@ logging:
     com.august.cupid: DEBUG
     org.springframework.web.socket: DEBUG
     org.springframework.messaging: DEBUG
+
+# API Documentation (SpringDoc OpenAPI)
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    tags-sorter: alpha
+    operations-sorter: alpha
+  show-actuator: false
