@@ -45,7 +45,7 @@ class OnlineStatusController(
             logger.error("사용자 온라인 상태 확인 실패: userId={}", userId, e)
             ResponseEntity.internalServerError().body(mapOf(
                 "error" to "온라인 상태 확인 실패",
-                "message" to e.message
+                "message" to (e.message ?: "알 수 없는 오류")
             ))
         }
     }
@@ -75,7 +75,7 @@ class OnlineStatusController(
             logger.error("사용자 온라인 상태 일괄 확인 실패", e)
             ResponseEntity.internalServerError().body(mapOf(
                 "error" to "온라인 상태 일괄 확인 실패",
-                "message" to e.message
+                "message" to (e.message ?: "알 수 없는 오류")
             ))
         }
     }
@@ -103,7 +103,7 @@ class OnlineStatusController(
             logger.error("온라인 사용자 목록 조회 실패", e)
             ResponseEntity.internalServerError().body(mapOf(
                 "error" to "온라인 사용자 목록 조회 실패",
-                "message" to e.message
+                "message" to (e.message ?: "알 수 없는 오류")
             ))
         }
     }
@@ -131,7 +131,7 @@ class OnlineStatusController(
             logger.error("온라인 상태 통계 조회 실패", e)
             ResponseEntity.internalServerError().body(mapOf(
                 "error" to "온라인 상태 통계 조회 실패",
-                "message" to e.message
+                "message" to (e.message ?: "알 수 없는 오류")
             ))
         }
     }
@@ -167,7 +167,7 @@ class OnlineStatusController(
             logger.error("채널 온라인 멤버 조회 실패: channelId={}", channelId, e)
             ResponseEntity.internalServerError().body(mapOf(
                 "error" to "채널 온라인 멤버 조회 실패",
-                "message" to e.message
+                "message" to (e.message ?: "알 수 없는 오류")
             ))
         }
     }

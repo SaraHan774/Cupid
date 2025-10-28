@@ -1,6 +1,6 @@
 package com.august.cupid.repository
 
-import com.august.cupid.model.entity.ChannelNotificationSettings
+import com.august.cupid.model.entity.notification.ChannelNotificationSettings
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param

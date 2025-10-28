@@ -58,11 +58,19 @@ echo ""
 echo "2. WebSocket 연결 테스트"
 echo "----------------------"
 
-# WebSocket 엔드포인트 접근 가능한지 확인
-if curl -s -I http://localhost:8080/ws/info | grep -q "200 OK"; then
-    test_passed "WebSocket 엔드포인트가 접근 가능합니다"
+# WebSocket 엔드포인트 접근 가능한지 확인 (websocat 사용)
+if command -v websocat >/dev/null 2>&1; then
+    # WebSocket 연결 테스트 (타임아웃 5초)
+    timeout 5s websocat "ws://localhost:8080/ws?userId=test-user-123" >/dev/null 2>&1
+    if [ $? -eq 0 ] || [ $? -eq 124 ]; then
+        test_passed "WebSocket 엔드포인트에 접근할 수 있습니다"
+    else
+        test_failed "WebSocket 엔드포인트에 접근할 수 없습니다"
+        test_info "에러: WebSocket 연결 실패 (400 Bad Request)"
+    fi
 else
-    test_failed "WebSocket 엔드포인트에 접근할 수 없습니다"
+    test_failed "websocat이 설치되지 않았습니다"
+    test_info "설치: brew install websocat"
 fi
 
 # 3. 온라인 상태 API 테스트

@@ -1,10 +1,10 @@
 package com.august.cupid.service
 
 import com.august.cupid.model.dto.*
-import com.august.cupid.model.entity.FcmToken
-import com.august.cupid.model.entity.DeviceType
-import com.august.cupid.model.entity.UserNotificationSettings
-import com.august.cupid.model.entity.ChannelNotificationSettings
+import com.august.cupid.model.entity.notification.FcmToken
+import com.august.cupid.model.entity.notification.DeviceType
+import com.august.cupid.model.entity.notification.UserNotificationSettings
+import com.august.cupid.model.entity.notification.ChannelNotificationSettings
 import com.august.cupid.repository.FcmTokenRepository
 import com.august.cupid.repository.UserNotificationSettingsRepository
 import com.august.cupid.repository.ChannelNotificationSettingsRepository
@@ -281,7 +281,8 @@ class NotificationService(
     ): Boolean {
         return try {
             // 사용자의 활성 FCM 토큰들 조회
-            val tokens = fcmTokenRepository.findByUserIdAndIsActiveTrue(userId)
+            val user = userRepository.findById(userId).orElse(null) ?: return false
+            val tokens = fcmTokenRepository.findByUserAndIsActiveTrue(user)
             if (tokens.isEmpty()) {
                 logger.warn("사용자 ${userId}의 활성 FCM 토큰이 없습니다")
                 return false

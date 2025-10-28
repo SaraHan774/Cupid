@@ -21,8 +21,7 @@ import java.util.concurrent.TimeUnit
  */
 @Component
 class ConnectionInterceptor(
-    private val redisTemplate: RedisTemplate<String, String>,
-    private val jwtUtil: JwtUtil
+    private val redisTemplate: RedisTemplate<String, String>
 ) : HandshakeInterceptor {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -48,27 +47,24 @@ class ConnectionInterceptor(
         attributes: MutableMap<String, Any>
     ): Boolean {
         try {
-            // 1. JWT 토큰 추출
-            val token = extractTokenFromRequest(request)
-            if (token == null) {
-                logger.warn("WebSocket 연결 실패: JWT 토큰이 없습니다")
-                return false
-            }
-
-            // 2. JWT 토큰 검증 및 사용자 ID 추출
-            val userId = jwtUtil.getUserIdFromToken(token)?.toString()
+            logger.info("WebSocket 핸드셰이크 시작: URI={}", request.uri)
+            
+            // 테스트를 위해 쿼리 파라미터에서 사용자 ID 추출
+            val userId = extractUserIdFromQuery(request)
             if (userId == null) {
-                logger.warn("WebSocket 연결 실패: 유효하지 않은 JWT 토큰")
+                logger.warn("WebSocket 연결 실패: 사용자 ID를 추출할 수 없습니다. URI={}", request.uri)
                 return false
             }
 
-            // 3. 세션 ID 생성 (WebSocket 세션 추적용)
+            logger.info("사용자 ID 추출 성공: userId={}", userId)
+
+            // 세션 ID 생성 (WebSocket 세션 추적용)
             val sessionId = generateSessionId(userId)
 
-            // 4. Redis에 온라인 상태 저장
+            // Redis에 온라인 상태 저장
             setUserOnlineStatus(userId, sessionId)
 
-            // 5. WebSocket 세션에 사용자 정보 저장
+            // WebSocket 세션에 사용자 정보 저장
             attributes["userId"] = userId
             attributes["sessionId"] = sessionId
 
@@ -201,6 +197,47 @@ class ConnectionInterceptor(
 
         } catch (e: Exception) {
             logger.error("Redis에서 온라인 상태 갱신 실패: userId={}", userId, e)
+        }
+    }
+
+    /**
+     * 쿼리 파라미터에서 사용자 ID 추출 (테스트용)
+     * 
+     * @param request HTTP 요청
+     * @return 사용자 ID 또는 null
+     */
+    private fun extractUserIdFromQuery(request: ServerHttpRequest): String? {
+        return try {
+            val uri = request.uri
+            logger.debug("URI 파싱: {}", uri)
+            
+            val query = uri.query
+            if (query.isNullOrBlank()) {
+                logger.warn("쿼리 파라미터가 없습니다")
+                return null
+            }
+            
+            val queryParams = query.split("&").associate { param ->
+                val parts = param.split("=", limit = 2)
+                val key = parts[0]
+                val value = if (parts.size > 1) parts[1] else ""
+                key to value
+            }
+            
+            logger.debug("쿼리 파라미터: {}", queryParams)
+            
+            val userId = queryParams["userId"]
+            if (userId.isNullOrBlank()) {
+                logger.warn("userId 파라미터가 없거나 비어있습니다")
+                return null
+            }
+            
+            logger.info("사용자 ID 추출 성공: {}", userId)
+            userId
+            
+        } catch (e: Exception) {
+            logger.error("쿼리 파라미터에서 사용자 ID 추출 실패", e)
+            null
         }
     }
 

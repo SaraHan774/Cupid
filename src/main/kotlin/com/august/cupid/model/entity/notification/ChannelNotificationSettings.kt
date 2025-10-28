@@ -1,5 +1,7 @@
-package com.august.cupid.model.entity
+package com.august.cupid.model.entity.notification
 
+import com.august.cupid.model.entity.Channel
+import com.august.cupid.model.entity.User
 import jakarta.persistence.*
 import org.hibernate.annotations.CreationTimestamp
 import org.hibernate.annotations.UpdateTimestamp

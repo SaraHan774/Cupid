@@ -1,4 +1,4 @@
-package com.august.cupid.model.entity
+package com.august.cupid.model.entity.notification
 
 import jakarta.persistence.*
 import org.hibernate.annotations.CreationTimestamp

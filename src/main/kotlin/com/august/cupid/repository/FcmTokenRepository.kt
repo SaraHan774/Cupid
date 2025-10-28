@@ -1,7 +1,8 @@
 package com.august.cupid.repository
 
-import com.august.cupid.model.entity.FcmToken
-import com.august.cupid.model.entity.DeviceType
+import com.august.cupid.model.entity.notification.FcmToken
+import com.august.cupid.model.entity.notification.DeviceType
+import com.august.cupid.model.entity.User
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
@@ -19,12 +20,12 @@ interface FcmTokenRepository : JpaRepository<FcmToken, UUID> {
     /**
      * 사용자 ID로 토큰들 조회
      */
-    fun findByUserId(userId: UUID): List<FcmToken>
+    fun findByUserId(user: User): List<FcmToken>
 
     /**
      * 사용자의 활성 토큰들 조회
      */
-    fun findByUserIdAndIsActiveTrue(userId: UUID): List<FcmToken>
+    fun findByUserAndIsActiveTrue(user: User): List<FcmToken>
 
     /**
      * 토큰으로 조회
@@ -34,7 +35,7 @@ interface FcmTokenRepository : JpaRepository<FcmToken, UUID> {
     /**
      * 디바이스 타입별 토큰 조회
      */
-    fun findByUserIdAndDeviceTypeAndIsActiveTrue(userId: UUID, deviceType: DeviceType): List<FcmToken>
+    fun findByUserAndDeviceTypeAndIsActiveTrue(user: User, deviceType: DeviceType): List<FcmToken>
 
     /**
      * 토큰 존재 여부 확인
@@ -44,7 +45,7 @@ interface FcmTokenRepository : JpaRepository<FcmToken, UUID> {
     /**
      * 사용자의 토큰 존재 여부 확인
      */
-    fun existsByUserIdAndIsActiveTrue(userId: UUID): Boolean
+    fun existsByUserAndIsActiveTrue(user: User): Boolean
 
     /**
      * 오래된 토큰들 조회 (30일 이상 미사용)
@@ -96,10 +97,10 @@ interface FcmTokenRepository : JpaRepository<FcmToken, UUID> {
     /**
      * 사용자의 특정 디바이스 토큰 조회
      */
-    fun findByUserIdAndDeviceNameAndIsActiveTrue(userId: UUID, deviceName: String): List<FcmToken>
+    fun findByUserAndDeviceNameAndIsActiveTrue(user: User, deviceName: String): List<FcmToken>
 
     /**
      * 토큰 중복 확인 (같은 사용자, 같은 토큰)
      */
-    fun existsByUserIdAndToken(userId: UUID, token: String): Boolean
+    fun existsByUserAndToken(user: User, token: String): Boolean
 }

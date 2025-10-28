@@ -263,4 +263,39 @@ class WebSocketMessageHandler(
         val channelId: String,
         val readAt: Long
     )
+
+    /**
+     * 연결 상태 통계 조회
+     * 
+     * @return 연결 상태 통계 정보
+     */
+    fun getConnectionStats(): ConnectionStats {
+        return try {
+            val totalConnections = lastHeartbeatTime.size
+            val currentTime = System.currentTimeMillis()
+            val activeConnections = lastHeartbeatTime.count { (_, lastTime) ->
+                currentTime - lastTime <= HEARTBEAT_TIMEOUT_MS
+            }
+
+            ConnectionStats(
+                totalConnections = totalConnections,
+                activeConnections = activeConnections,
+                inactiveConnections = totalConnections - activeConnections,
+                lastCheckTime = currentTime
+            )
+        } catch (e: Exception) {
+            logger.error("연결 상태 통계 조회 실패", e)
+            ConnectionStats(0, 0, 0, System.currentTimeMillis())
+        }
+    }
+
+    /**
+     * 연결 상태 통계 데이터 클래스
+     */
+    data class ConnectionStats(
+        val totalConnections: Int,
+        val activeConnections: Int,
+        val inactiveConnections: Int,
+        val lastCheckTime: Long
+    )
 }

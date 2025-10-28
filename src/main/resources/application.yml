@@ -57,3 +57,5 @@ logging:
   level:
     root: INFO
     com.august.cupid: DEBUG
+    org.springframework.web.socket: DEBUG
+    org.springframework.messaging: DEBUG
