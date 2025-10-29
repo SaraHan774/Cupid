@@ -52,6 +52,7 @@ class SecurityConfig(
                         "/api/v1/online-status/**",  // 온라인 상태 API 공개
                         "/ws/**",
                         "/static/**",               // 정적 파일 공개
+                        "/uploads/**",              // 업로드된 파일 공개 (프로필 이미지 등)
                         "/websocket-test.html",     // 테스트 페이지 공개
                         "/swagger-ui/**",           // Swagger UI
                         "/swagger-ui.html",         // Swagger UI 메인 페이지

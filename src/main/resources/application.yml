@@ -81,6 +81,21 @@ logging:
     org.springframework.web.socket: DEBUG
     org.springframework.messaging: DEBUG
 
+# Storage 설정
+storage:
+  type: local  # local 또는 s3
+  # 로컬 스토리지 설정
+  local:
+    base-path: uploads
+    base-url: http://localhost:8080/uploads
+  # S3 설정 (프로덕션용)
+  s3:
+    bucket-name: ${S3_BUCKET_NAME:cupid-profile-images}
+    region: ${S3_REGION:us-east-1}
+    access-key: ${S3_ACCESS_KEY:}
+    secret-key: ${S3_SECRET_KEY:}
+    cdn-url: ${S3_CDN_URL:}  # CloudFront URL (선택사항)
+
 # API Documentation (SpringDoc OpenAPI)
 springdoc:
   api-docs:

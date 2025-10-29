@@ -261,6 +261,42 @@ class UserService(
     }
 
     /**
+     * 프로필 이미지 정보 업데이트
+     *
+     * ProfileImageService에서 호출하여 사용자의 프로필 이미지 정보를 업데이트합니다.
+     */
+    fun updateProfileImage(
+        userId: UUID,
+        profileImageUrl: String?,
+        profileThumbnailUrl: String?,
+        profileImageBlurhash: String?,
+        profileImageMetadata: Map<String, Any>?
+    ): ApiResponse<UserResponse> {
+        return try {
+            val user = userRepository.findById(userId).orElse(null)
+            if (user == null) {
+                return ApiResponse(false, message = "사용자를 찾을 수 없습니다")
+            }
+
+            val updatedUser = user.copy(
+                profileImageUrl = profileImageUrl,
+                profileThumbnailUrl = profileThumbnailUrl,
+                profileImageBlurhash = profileImageBlurhash,
+                profileImageMetadata = profileImageMetadata,
+                updatedAt = LocalDateTime.now()
+            )
+
+            val savedUser = userRepository.save(updatedUser)
+            logger.info("프로필 이미지 정보 업데이트 완료: ${savedUser.username} (${savedUser.id})")
+
+            ApiResponse(true, data = savedUser.toResponse(), message = "프로필 이미지가 업데이트되었습니다")
+        } catch (e: Exception) {
+            logger.error("프로필 이미지 업데이트 실패: ${e.message}", e)
+            ApiResponse(false, error = "프로필 이미지 업데이트 중 오류가 발생했습니다")
+        }
+    }
+
+    /**
      * User 엔티티를 UserResponse DTO로 변환
      */
     private fun User.toResponse(): UserResponse {

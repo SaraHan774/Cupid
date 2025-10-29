@@ -317,12 +317,13 @@ CREATE INDEX idx_user_keys_expires_at ON user_keys(expires_at);
 ```sql
 CREATE TABLE channels (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    type VARCHAR(20) NOT NULL CHECK (type IN ('direct', 'group')),
+    type VARCHAR(20) NOT NULL CHECK (type IN ('DIRECT', 'GROUP')),  -- 실제 구현: 대문자 enum 값 사용
     name VARCHAR(255),
     creator_id UUID NOT NULL REFERENCES users(id) ON DELETE SET NULL,
     match_id UUID REFERENCES matches(id) ON DELETE SET NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    version BIGINT DEFAULT 0,  -- 낙관적 락을 위한 버전 필드 (실제 구현에 포함됨)
     metadata JSONB,
     
     CONSTRAINT fk_channels_creator FOREIGN KEY (creator_id) REFERENCES users(id),
@@ -336,11 +337,14 @@ CREATE INDEX idx_channels_created_at ON channels(created_at);
 ```
 
 **컬럼 설명**:
-- `type`: 채널 타입 (direct: 1:1, group: 그룹)
-- `name`: 채널명 (그룹 채팅만 사용)
+- `type`: 채널 타입 (실제 구현)
+  - `DIRECT`: 1:1 채팅
+  - `GROUP`: 그룹 채팅
+- `name`: 채널명 (그룹 채팅만 사용, DIRECT 채널은 null)
 - `creator_id`: 채널 생성자
 - `match_id`: 매칭 ID (소개팅 앱 전용, nullable)
-- `metadata`: 추가 정보
+- `version`: 낙관적 락을 위한 버전 필드 (실제 구현에 포함)
+- `metadata`: 추가 정보 (JSONB)
 
 ---
 
@@ -351,15 +355,16 @@ CREATE TABLE channel_members (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role VARCHAR(20) NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+    role VARCHAR(20) NOT NULL DEFAULT 'MEMBER' CHECK (role IN ('ADMIN', 'MEMBER')),  -- 실제 구현: 대문자 enum 값 사용
     joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     left_at TIMESTAMP,
     last_read_at TIMESTAMP,
     is_active BOOLEAN NOT NULL DEFAULT true,
+    version BIGINT DEFAULT 0,  -- 낙관적 락을 위한 버전 필드 (실제 구현에 포함됨)
     
     CONSTRAINT fk_channel_members_channel FOREIGN KEY (channel_id) REFERENCES channels(id),
     CONSTRAINT fk_channel_members_user FOREIGN KEY (user_id) REFERENCES users(id),
-    CONSTRAINT unique_active_membership UNIQUE (channel_id, user_id, is_active)
+    CONSTRAINT unique_active_membership UNIQUE (channel_id, user_id)  -- 실제 구현: (channel_id, user_id) 유니크 제약
 );
 
 CREATE INDEX idx_channel_members_channel ON channel_members(channel_id);
@@ -369,11 +374,14 @@ CREATE INDEX idx_channel_members_last_read ON channel_members(last_read_at);
 ```
 
 **컬럼 설명**:
-- `role`: 역할 (admin: 관리자, member: 일반 멤버)
+- `role`: 역할 (실제 구현)
+  - `ADMIN`: 관리자
+  - `MEMBER`: 일반 멤버
 - `joined_at`: 참여 시간
 - `left_at`: 나간 시간 (null이면 현재 참여 중)
 - `last_read_at`: 마지막으로 읽은 시간 (읽지 않은 메시지 계산)
 - `is_active`: 현재 참여 중 여부
+- `version`: 낙관적 락을 위한 버전 필드 (실제 구현에 포함)
 
 ---
 
@@ -384,8 +392,8 @@ CREATE TABLE matches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user1_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     user2_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    status VARCHAR(20) NOT NULL DEFAULT 'active' 
-        CHECK (status IN ('active', 'expired', 'cancelled')),
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' 
+        CHECK (status IN ('ACTIVE', 'ACCEPTED', 'REJECTED', 'ENDED', 'EXPIRED', 'CANCELLED')),  -- 실제 구현에 맞게 업데이트
     matched_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP,
     metadata JSONB,
@@ -402,7 +410,13 @@ CREATE INDEX idx_matches_expires_at ON matches(expires_at);
 ```
 
 **컬럼 설명**:
-- `status`: 매칭 상태 (active, expired, cancelled)
+- `status`: 매칭 상태 (실제 구현)
+  - `ACTIVE`: 활성 매칭
+  - `ACCEPTED`: 수락됨
+  - `REJECTED`: 거부됨
+  - `ENDED`: 종료됨
+  - `EXPIRED`: 만료
+  - `CANCELLED`: 취소
 - `matched_at`: 매칭 성사 시간
 - `expires_at`: 매칭 만료 시간
 - `metadata`: 매칭 관련 추가 정보
@@ -454,10 +468,10 @@ CREATE TABLE reports (
     context_message_ids UUID[],  -- 전후 메시지 ID들 (패턴 분석용)
     
     report_type VARCHAR(50) NOT NULL 
-        CHECK (report_type IN ('spam', 'harassment', 'inappropriate', 'other')),
+        CHECK (report_type IN ('SPAM', 'HARASSMENT', 'INAPPROPRIATE', 'OTHER')),  -- 실제 구현: 대문자 enum 값
     reason TEXT NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'reviewed', 'resolved', 'dismissed')),
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+        CHECK (status IN ('PENDING', 'REVIEWED', 'RESOLVED', 'DISMISSED')),  -- 실제 구현: 대문자 enum 값
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     resolved_at TIMESTAMP,
     resolver_id UUID REFERENCES users(id) ON DELETE SET NULL,
@@ -509,7 +523,7 @@ CREATE INDEX idx_reports_created_at ON reports(created_at);
   // E2E 암호화된 내용
   encrypted_content: String,  // 암호화된 메시지 본문
   
-  message_type: String,  // 'text', 'image', 'file'
+  message_type: String,  // 'TEXT', 'IMAGE', 'FILE' (실제 구현: 대문자 enum 값)
   
   // 파일/이미지 메타데이터 (암호화되지 않음)
   file_metadata: {
@@ -520,7 +534,7 @@ CREATE INDEX idx_reports_created_at ON reports(created_at);
     thumbnail_url: String        // 썸네일 (선택)
   },
   
-  status: String,  // 'sent', 'delivered', 'deleted'
+  status: String,  // 'SENT', 'DELIVERED', 'DELETED' (실제 구현: 대문자 enum 값)
   
   created_at: ISODate,
   updated_at: ISODate,

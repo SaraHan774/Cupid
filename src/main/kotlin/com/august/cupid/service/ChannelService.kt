@@ -303,6 +303,20 @@ class ChannelService(
     }
 
     /**
+     * 채널 멤버십 확인
+     */
+    @Transactional(readOnly = true)
+    fun isChannelMember(channelId: UUID, userId: UUID): ApiResponse<Boolean> {
+        return try {
+            val isMember = channelMembersRepository.existsByChannelIdAndUserIdAndIsActiveTrue(channelId, userId)
+            ApiResponse(true, data = isMember)
+        } catch (e: Exception) {
+            logger.error("채널 멤버십 확인 실패: ${e.message}", e)
+            ApiResponse(false, error = "채널 멤버십 확인 중 오류가 발생했습니다")
+        }
+    }
+
+    /**
      * Channel 엔티티를 ChannelResponse DTO로 변환
      */
     private fun Channel.toResponse(): ChannelResponse {

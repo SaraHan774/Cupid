@@ -49,6 +49,17 @@ dependencies {
     // Signal Protocol for end-to-end encryption
     implementation("org.whispersystems:signal-protocol-java:2.8.1")
 
+    // Image Processing
+    implementation("net.coobird:thumbnailator:0.4.20")
+    implementation("com.google.code.gson:gson:2.10.1")
+
+    // AWS S3
+    implementation("software.amazon.awssdk:s3:2.20.26")
+    implementation("software.amazon.awssdk:core:2.20.26")
+
+    // BlurHash (optional - for server-side generation)
+    implementation("com.vanniktech:blurhash:0.2.0")
+
     // API Documentation (SpringDoc OpenAPI)
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.3.0")
 

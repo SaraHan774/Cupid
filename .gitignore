@@ -51,3 +51,5 @@ server_debug.log
 CLAUDE.md
 # Documentation archive (reference only, not maintained)
 docs-archive/
+.claude/
+SECURITY_REVIEW/.DS_Store
