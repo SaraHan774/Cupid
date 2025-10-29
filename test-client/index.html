@@ -51,9 +51,14 @@
                     <h2>채널</h2>
                     <button onclick="showCreateChannelDialog()">+</button>
                 </div>
-                
+
                 <div class="channel-list" id="channelList">
                     <p>채널을 불러오는 중...</p>
+                </div>
+
+                <div class="user-info-section">
+                    <h3>내 정보</h3>
+                    <p class="user-id-display" id="myUserId" title="클릭해서 복사">User ID: Loading...</p>
                 </div>
             </aside>
 
@@ -91,7 +96,11 @@
                 <option value="GROUP">그룹 채팅</option>
                 <option value="DIRECT">1:1 채팅</option>
             </select>
-            <p class="dialog-hint">* 현재 자신만 포함된 채널이 생성됩니다</p>
+            <input type="text" id="inviteUserId" placeholder="초대할 사용자 ID (선택사항)" />
+            <p class="dialog-hint">
+                * 채널 생성 후 다른 사용자를 초대하려면 해당 사용자의 ID를 입력하세요<br>
+                * 사용자 ID는 로그인 후 좌측 하단에서 확인할 수 있습니다
+            </p>
             <div class="dialog-buttons">
                 <button onclick="createChannel()">생성</button>
                 <button onclick="closeCreateChannelDialog()">취소</button>

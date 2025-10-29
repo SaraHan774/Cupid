@@ -215,11 +215,11 @@ class ChannelController(
         @PathVariable channelId: String
     ): ResponseEntity<Map<String, Any>> {
         logger.info("채널 멤버 목록 조회: channelId={}", channelId)
-        
+
         return try {
             val channelIdUuid = UUID.fromString(channelId)
             val result = channelService.getChannelMembers(channelIdUuid)
-            
+
             if (result.success) {
                 ResponseEntity.ok(mapOf(
                     "success" to true,
@@ -233,6 +233,58 @@ class ChannelController(
             }
         } catch (e: Exception) {
             logger.error("채널 멤버 목록 조회 중 오류 발생: channelId={}", channelId, e)
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(mapOf(
+                "success" to false,
+                "error" to "서버 오류가 발생했습니다"
+            ))
+        }
+    }
+
+    /**
+     * 채널에 사용자 초대
+     * POST /api/v1/channels/{channelId}/members
+     */
+    @Operation(summary = "채널 멤버 추가", description = "채널에 새로운 사용자를 초대합니다")
+    @PostMapping("/{channelId}/members")
+    fun addMemberToChannel(
+        authentication: Authentication,
+        @PathVariable channelId: String,
+        @RequestBody request: Map<String, String>
+    ): ResponseEntity<Map<String, Any>> {
+        val inviterId = getUserIdFromAuthentication(authentication)
+        if (inviterId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(mapOf(
+                "success" to false,
+                "error" to "인증 정보를 찾을 수 없습니다"
+            ))
+        }
+
+        val userIdToAdd = request["userId"] ?: return ResponseEntity.badRequest().body(mapOf(
+            "success" to false,
+            "error" to "userId는 필수입니다"
+        ))
+
+        logger.info("채널 멤버 추가 요청: channelId={}, userId={}, inviterId={}", channelId, userIdToAdd, inviterId)
+
+        return try {
+            val channelIdUuid = UUID.fromString(channelId)
+            val userIdUuid = UUID.fromString(userIdToAdd)
+
+            val result = channelService.addUserToChannel(channelIdUuid, userIdUuid, inviterId)
+
+            if (result.success) {
+                ResponseEntity.ok(mapOf(
+                    "success" to true,
+                    "message" to (result.message ?: "사용자가 채널에 추가되었습니다")
+                ))
+            } else {
+                ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf(
+                    "success" to false,
+                    "error" to (result.message ?: "사용자 추가 실패")
+                ))
+            }
+        } catch (e: Exception) {
+            logger.error("채널 멤버 추가 중 오류 발생: channelId={}, userId={}", channelId, userIdToAdd, e)
             ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(mapOf(
                 "success" to false,
                 "error" to "서버 오류가 발생했습니다"

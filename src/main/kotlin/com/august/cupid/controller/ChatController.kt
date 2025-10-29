@@ -94,35 +94,44 @@ class ChatController(
                 return
             }
 
-            // 온라인 사용자에게 브로드캐스트
-            var onlineCount = 0
-            var offlineCount = 0
+            // 채널 topic으로 브로드캐스트 (모든 구독자에게 전달)
+            try {
+                messagingTemplate.convertAndSend(
+                    "/topic/channel/${request.channelId}",
+                    savedMessage
+                )
+                logger.debug("채널 topic 브로드캐스트 완료: channelId={}", request.channelId)
+            } catch (e: Exception) {
+                logger.error("채널 topic 브로드캐스트 실패: channelId={}", request.channelId, e)
+            }
+
+            // 모든 멤버에게 브로드캐스트 (발신자 제외)
+            // SimpleBroker가 연결된 세션에만 전달함
+            var broadcastCount = 0
 
             members.forEach { member ->
                 // 발신자는 제외
                 if (member.user.id == userId) return@forEach
 
-                // 온라인 상태 확인
-                val isOnline = onlineStatusService.isUserOnline(member.user.id.toString())
+                // 두 가지 방식으로 브로드캐스트
+                // 1. User destination (원래 방식)
+                try {
+                    messagingTemplate.convertAndSendToUser(
+                        member.user.id.toString(),
+                        "/queue/messages",
+                        savedMessage
+                    )
+                    logger.debug("User destination 브로드캐스트: userId={}", member.user.id)
+                } catch (e: Exception) {
+                    logger.error("User destination 브로드캐스트 실패: userId={}", member.user.id, e)
+                }
 
-                if (isOnline) {
-                    // WebSocket으로 브로드캐스트
-                    try {
-                        messagingTemplate.convertAndSendToUser(
-                            member.user.id.toString(),
-                            "/queue/messages",
-                            savedMessage
-                        )
-                        onlineCount++
-                        logger.debug("메시지 브로드캐스트 완료: userId={}, messageId={}", 
-                            member.user.id, savedMessage.id)
-                    } catch (e: Exception) {
-                        logger.error("WebSocket 브로드캐스트 실패: userId={}", member.user.id, e)
-                    }
-                } else {
-                    // 오프라인 사용자 - FCM으로 전송
-                    offlineCount++
-                    logger.debug("오프라인 사용자: userId={}, FCM 전송", member.user.id)
+                broadcastCount++
+
+                // 오프라인 사용자인 경우 FCM 알림 추가 전송
+                val isOnline = onlineStatusService.isUserOnline(member.user.id.toString())
+                if (!isOnline) {
+                    logger.debug("오프라인 사용자 FCM 전송: userId={}", member.user.id)
                     
                     try {
                         val notificationResult = notificationService.sendMessageNotification(
@@ -144,8 +153,8 @@ class ChatController(
                 }
             }
 
-            logger.info("메시지 전송 완료: messageId={}, online={}, offline={}", 
-                savedMessage.id, onlineCount, offlineCount)
+            logger.info("메시지 전송 완료: messageId={}, 브로드캐스트={}",
+                savedMessage.id, broadcastCount)
 
         } catch (e: Exception) {
             logger.error("메시지 전송 중 오류 발생", e)

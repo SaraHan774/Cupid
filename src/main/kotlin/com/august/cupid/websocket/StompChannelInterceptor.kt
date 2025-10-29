@@ -25,22 +25,35 @@ class StompChannelInterceptor : ChannelInterceptor {
     override fun preSend(message: Message<*>, channel: MessageChannel): Message<*>? {
         val accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor::class.java)
 
-        if (accessor != null && StompCommand.CONNECT == accessor.command) {
-            // WebSocket 세션에서 사용자 ID 가져오기
-            val sessionAttributes = accessor.sessionAttributes
+        if (accessor != null) {
+            when (accessor.command) {
+                StompCommand.CONNECT -> {
+                    // WebSocket 세션에서 사용자 ID 가져오기
+                    val sessionAttributes = accessor.sessionAttributes
 
-            if (sessionAttributes != null) {
-                val userId = sessionAttributes["userId"] as? String
+                    if (sessionAttributes != null) {
+                        val userId = sessionAttributes["userId"] as? String
 
-                if (userId != null) {
-                    // STOMP 세션에 사용자 ID 저장
-                    accessor.user = java.security.Principal { userId }
-                    logger.info("STOMP 연결: userId={} 설정 완료", userId)
-                } else {
-                    logger.warn("STOMP 연결: 세션 속성에 userId가 없습니다")
+                        if (userId != null) {
+                            // STOMP 세션에 사용자 ID 저장
+                            accessor.user = java.security.Principal { userId }
+                            logger.info("STOMP 연결: userId={} 설정 완료", userId)
+                        } else {
+                            logger.warn("STOMP 연결: 세션 속성에 userId가 없습니다")
+                        }
+                    } else {
+                        logger.warn("STOMP 연결: sessionAttributes가 null입니다")
+                    }
                 }
-            } else {
-                logger.warn("STOMP 연결: sessionAttributes가 null입니다")
+                StompCommand.SUBSCRIBE -> {
+                    // 구독 정보 로깅
+                    val destination = accessor.destination
+                    val userId = accessor.user?.name
+                    logger.info("STOMP 구독: userId={}, destination={}", userId, destination)
+                }
+                else -> {
+                    // 다른 명령은 로깅하지 않음
+                }
             }
         }
 

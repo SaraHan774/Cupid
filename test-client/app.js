@@ -6,9 +6,71 @@ let stompClient = null;
 let currentChannelId = null;
 let usersCache = {}; // 사용자 정보 캐시 (senderId -> UserResponse)
 
+// 페이지 로드 시 저장된 세션 복원
+window.addEventListener('DOMContentLoaded', function() {
+    restoreSession();
+});
+
 // API Base URL (로컬 개발 서버)
 const API_BASE = 'http://localhost:8080/api/v1';
 const WS_BASE = 'http://localhost:8080/ws';  // WebSocket 엔드포인트 (/ws/chat이 아닌 /ws)
+
+// 세션 저장
+function saveSession() {
+    if (currentUser && accessToken) {
+        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+        localStorage.setItem('accessToken', accessToken);
+        localStorage.setItem('refreshToken', refreshToken);
+        console.log('세션 저장됨');
+    }
+}
+
+// 세션 복원
+function restoreSession() {
+    const savedUser = localStorage.getItem('currentUser');
+    const savedAccessToken = localStorage.getItem('accessToken');
+    const savedRefreshToken = localStorage.getItem('refreshToken');
+
+    if (savedUser && savedAccessToken) {
+        try {
+            currentUser = JSON.parse(savedUser);
+            accessToken = savedAccessToken;
+            refreshToken = savedRefreshToken;
+
+            console.log('세션 복원됨:', currentUser.username);
+
+            // 로그인 화면 숨기고 메인 화면 표시
+            document.getElementById('loginScreen').classList.add('hidden');
+            document.getElementById('mainScreen').classList.remove('hidden');
+            document.getElementById('currentUser').textContent = currentUser.username;
+
+            // 사용자 ID 표시
+            const myUserIdElement = document.getElementById('myUserId');
+            myUserIdElement.textContent = `User ID: ${currentUser.id}`;
+            myUserIdElement.onclick = () => {
+                navigator.clipboard.writeText(currentUser.id);
+                alert('User ID가 클립보드에 복사되었습니다!');
+            };
+
+            // WebSocket 연결
+            connectWebSocket();
+
+            // 채널 목록 로드
+            loadChannels();
+        } catch (error) {
+            console.error('세션 복원 실패:', error);
+            clearSession();
+        }
+    }
+}
+
+// 세션 삭제
+function clearSession() {
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    console.log('세션 삭제됨');
+}
 
 // 탭 전환
 function showTab(tab) {
@@ -79,10 +141,21 @@ async function login() {
             accessToken = data.data.accessToken;
             refreshToken = data.data.refreshToken;
 
+            // 세션 저장
+            saveSession();
+
             // 로그인 화면 숨기고 메인 화면 표시
             document.getElementById('loginScreen').classList.add('hidden');
             document.getElementById('mainScreen').classList.remove('hidden');
             document.getElementById('currentUser').textContent = currentUser.username;
+
+            // 사용자 ID 표시
+            const myUserIdElement = document.getElementById('myUserId');
+            myUserIdElement.textContent = `User ID: ${currentUser.id}`;
+            myUserIdElement.onclick = () => {
+                navigator.clipboard.writeText(currentUser.id);
+                alert('User ID가 클립보드에 복사되었습니다!');
+            };
 
             // WebSocket 연결
             connectWebSocket();
@@ -115,6 +188,9 @@ async function logout() {
         currentUser = null;
         accessToken = null;
         refreshToken = null;
+
+        // 세션 삭제
+        clearSession();
 
         // 로그인 화면으로 돌아가기
         document.getElementById('mainScreen').classList.add('hidden');
@@ -172,6 +248,9 @@ async function selectChannel(channelId) {
     // 메시지 영역 표시
     document.getElementById('noChannelSelected').classList.add('hidden');
     document.getElementById('chatArea').classList.remove('hidden');
+
+    // 채널별 WebSocket 구독
+    subscribeToChannel(channelId);
 
     // 채널 정보 표시
     try {
@@ -320,19 +399,37 @@ async function sendMessage() {
     // WebSocket이 연결되어 있으면 WebSocket으로 전송 (실시간)
     if (stompClient && stompClient.connected) {
         try {
+            const messageData = {
+                channelId: currentChannelId,
+                encryptedContent: content,
+                messageType: 'TEXT'
+            };
+
+            console.log('=== 메시지 전송 시작 ===');
+            console.log('전송할 메시지:', messageData);
+            console.log('현재 사용자 ID:', currentUser.id);
+
             stompClient.send(
                 "/app/send",
                 {},
-                JSON.stringify({
-                    channelId: currentChannelId,
-                    encryptedContent: content,
-                    messageType: 'TEXT'
-                })
+                JSON.stringify(messageData)
             );
-            
+
+            // 발신자 화면에 즉시 표시 (백엔드는 발신자에게 브로드캐스트하지 않음)
+            displayMessage({
+                id: 'temp-' + Date.now(), // 임시 ID
+                channelId: currentChannelId,
+                senderId: currentUser.id,
+                encryptedContent: content,
+                messageType: 'TEXT',
+                status: 'SENT',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            });
+
             // 입력창 비우기
             messageInput.value = '';
-            console.log('WebSocket으로 메시지 전송:', content);
+            console.log('WebSocket으로 메시지 전송 완료');
         } catch (error) {
             console.error('WebSocket 전송 실패, HTTP로 재시도:', error);
             // WebSocket 실패 시 HTTP로 폴백
@@ -396,14 +493,20 @@ function connectWebSocket() {
             // 메시지 수신 구독
             if (currentUser && currentUser.id) {
                 const destination = `/user/${currentUser.id}/queue/messages`;
-                console.log('구독 시작:', destination);
+                console.log('=== 구독 시작 ===');
+                console.log('구독 경로:', destination);
+                console.log('현재 사용자 ID:', currentUser.id);
 
                 const subscription = stompClient.subscribe(destination, function(message) {
+                    console.log('=== 메시지 수신 콜백 실행됨! ===');
                     const data = JSON.parse(message.body);
-                    console.log('메시지 수신:', data);
+                    console.log('받은 메시지:', data);
+                    console.log('현재 채널 ID:', currentChannelId);
+                    console.log('메시지 채널 ID:', data.channelId);
 
                     // 현재 선택된 채널의 메시지만 표시
                     if (data.channelId === currentChannelId) {
+                        console.log('현재 채널의 메시지 - 화면에 표시합니다');
                         displayMessage(data);
                     } else {
                         console.log('다른 채널의 메시지 (알림 표시 가능):', data.channelId);
@@ -411,7 +514,8 @@ function connectWebSocket() {
                     }
                 });
 
-                console.log('메시지 구독 완료:', destination);
+                console.log('구독 완료! subscription ID:', subscription.id);
+
             }
         },
         function(error) {
@@ -423,6 +527,36 @@ function connectWebSocket() {
             }, 5000);
         }
     );
+}
+
+// 채널별 WebSocket 구독 (채널 선택 시 호출)
+let channelSubscription = null;
+
+function subscribeToChannel(channelId) {
+    // 기존 구독 해제
+    if (channelSubscription) {
+        channelSubscription.unsubscribe();
+        console.log('기존 채널 구독 해제');
+    }
+
+    // 새 채널 구독
+    if (stompClient && stompClient.connected && channelId) {
+        const channelTopic = `/topic/channel/${channelId}`;
+        console.log('=== 채널 구독 시작 ===');
+        console.log('채널 ID:', channelId);
+        console.log('구독 경로:', channelTopic);
+
+        channelSubscription = stompClient.subscribe(channelTopic, function(message) {
+            console.log('=== 채널 메시지 수신! ===');
+            const data = JSON.parse(message.body);
+            console.log('받은 메시지:', data);
+
+            // 메시지 화면에 표시
+            displayMessage(data);
+        });
+
+        console.log('채널 구독 완료!');
+    }
 }
 
 // 채널 생성 다이얼로그 표시
@@ -439,6 +573,7 @@ function closeCreateChannelDialog() {
 async function createChannel() {
     const name = document.getElementById('channelName').value;
     const type = document.getElementById('channelType').value;
+    const inviteUserId = document.getElementById('inviteUserId').value.trim();
 
     try {
         // 백엔드 CreateChannelRequest: { name?, type, matchId? }
@@ -462,13 +597,43 @@ async function createChannel() {
         console.log('채널 생성 응답:', data);
 
         if (data.success) {
-            alert('채널이 생성되었습니다!');
+            const channelId = data.channel?.id;
+
+            // 초대할 사용자 ID가 있으면 채널에 추가
+            if (inviteUserId && channelId) {
+                console.log('사용자 초대 시작:', inviteUserId);
+                try {
+                    const inviteResponse = await fetch(`${API_BASE}/channels/${channelId}/members`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${accessToken}`
+                        },
+                        body: JSON.stringify({ userId: inviteUserId })
+                    });
+
+                    const inviteData = await inviteResponse.json();
+                    console.log('사용자 초대 응답:', inviteData);
+
+                    if (inviteData.success) {
+                        alert('채널이 생성되었고, 사용자가 초대되었습니다!');
+                    } else {
+                        alert(`채널은 생성되었지만 사용자 초대 실패: ${inviteData.error || '알 수 없는 오류'}`);
+                    }
+                } catch (inviteError) {
+                    console.error('사용자 초대 오류:', inviteError);
+                    alert('채널은 생성되었지만 사용자 초대 중 오류 발생');
+                }
+            } else {
+                alert('채널이 생성되었습니다!');
+            }
+
             closeCreateChannelDialog();
             // 채널 목록 새로고침
             await loadChannels();
             // 생성된 채널로 자동 이동
-            if (data.channel && data.channel.id) {
-                selectChannel(data.channel.id);
+            if (channelId) {
+                selectChannel(channelId);
             }
         } else {
             alert(data.error || data.message || '채널 생성 실패');
