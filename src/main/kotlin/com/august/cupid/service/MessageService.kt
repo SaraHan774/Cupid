@@ -28,7 +28,8 @@ class MessageService(
     private val messageRepository: MessageRepository,
     private val messageReadsRepository: MessageReadsRepository,
     private val channelMembersRepository: ChannelMembersRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val messagingTemplate: org.springframework.messaging.simp.SimpMessagingTemplate
 ) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -87,6 +88,19 @@ class MessageService(
             val savedMessage = messageRepository.save(message)
 
             logger.info("메시지 전송 완료: ${savedMessage.id} -> 채널 ${savedMessage.channelId}")
+
+            // WebSocket으로 실시간 브로드캐스트
+            try {
+                val messageResponse = savedMessage.toResponse()
+                messagingTemplate.convertAndSend(
+                    "/topic/channel/${savedMessage.channelId}",
+                    messageResponse
+                )
+                logger.debug("WebSocket 브로드캐스트 완료: 채널 ${savedMessage.channelId}")
+            } catch (e: Exception) {
+                logger.error("WebSocket 브로드캐스트 실패: ${e.message}", e)
+                // 브로드캐스트 실패해도 메시지는 저장되었으므로 계속 진행
+            }
 
             ApiResponse(true, data = savedMessage.toResponse(), message = "메시지가 성공적으로 전송되었습니다")
         } catch (e: Exception) {

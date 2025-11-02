@@ -16,7 +16,7 @@ import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
-import org.springframework.transaction.annotation.Transactional
+import org.springframework.test.annotation.DirtiesContext
 import java.util.*
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -37,8 +37,8 @@ import org.junit.jupiter.api.assertThrows as jupiterAssertThrows
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Transactional
 @ActiveProfiles("test")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 @TestPropertySource(properties = [
     "spring.data.mongodb.database=testdb_app",
     "spring.data.redis.host=localhost",

@@ -21,7 +21,7 @@ import java.util.*
 data class SignalIdentity(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    val id: UUID = UUID.randomUUID(),
+    val id: UUID? = null,
 
     /**
      * User who verified this identity

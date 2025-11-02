@@ -268,8 +268,8 @@ class DatabaseSignalProtocolStore(
         try {
             // Mark as used in database instead of deleting
             val preKey = signalPreKeyRepository.findByUserIdAndPreKeyId(userId, preKeyId)
-            if (preKey != null) {
-                signalPreKeyRepository.markAsUsed(preKey.id, LocalDateTime.now())
+            if (preKey != null && preKey.id != null) {
+                signalPreKeyRepository.markAsUsed(preKey.id!!, LocalDateTime.now())
                 logger.info("Marked pre-key $preKeyId as used for user $userId")
             }
 

@@ -80,6 +80,13 @@ logging:
     com.august.cupid: DEBUG
     org.springframework.web.socket: DEBUG
     org.springframework.messaging: DEBUG
+  file:
+    name: logs/cupid-server.log  # 로그 파일 저장 위치
+    max-size: 10MB  # 로그 파일 최대 크기
+    max-history: 30  # 보관할 로그 파일 개수
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"  # 파일 로그 형식
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"  # 콘솔 로그 형식
 
 # Storage 설정
 storage:
@@ -113,7 +120,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics
+        include: health,info,prometheus,metrics,loggers,logfile  # loggers와 logfile 추가
       base-path: /actuator
   endpoint:
     health:

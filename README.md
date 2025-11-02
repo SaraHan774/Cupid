@@ -32,6 +32,9 @@ python3 test_all_endpoints.py
 | **API 문서** (자동 생성) | http://localhost:8080/swagger-ui.html |
 | **WebSocket 테스트** | http://localhost:8080/websocket-test.html |
 | **Health Check** | http://localhost:8080/api/v1/health |
+| **로그 파일 (웹)** | http://localhost:8080/actuator/logfile |
+| **로그 레벨 관리** | http://localhost:8080/actuator/loggers |
+| **로그 가이드** | `documents/guides/LOGGING_GUIDE.md` |
 | **코드 설명** | 각 클래스의 KDoc 주석 |
 | **설정** | `application.yml` |
 
@@ -166,10 +169,15 @@ GET /api/v1/admin/dashboard/metrics
 ## 📖 Additional Documentation
 
 - **API Documentation**: Swagger UI at http://localhost:8080/swagger-ui.html
+- **Encryption API Guide**: `documents/guides/ENCRYPTION_API_GUIDE.md` - Complete integration guide for E2E encryption
+- **Security Best Practices**: `documents/guides/ENCRYPTION_SECURITY_BEST_PRACTICES.md` - Security guidelines
+- **Metrics Guide**: `documents/guides/METRICS_GUIDE.md` - How to query encryption metrics
 - **Project Specifications**: See `documents/specifications/` folder
   - `chat-sdk-spec.md` - Complete SDK specification
   - `database-schema.md` - Database schema documentation
   - `notification-system-spec.md` - Notification system specification
+- **Code Examples**: See `documents/examples/` folder
+  - `encryption-flow.js` - Complete JavaScript integration example
 - **Task Lists**: See `documents/tasks/` folder
   - `today-tasks.md` - Current development tasks
 

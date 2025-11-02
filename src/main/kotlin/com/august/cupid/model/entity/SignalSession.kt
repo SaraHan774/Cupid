@@ -23,7 +23,7 @@ import java.util.*
 data class SignalSession(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    val id: UUID = UUID.randomUUID(),
+    val id: UUID? = null,
 
     /**
      * User who owns this session
@@ -60,11 +60,5 @@ data class SignalSession(
      * Last time this session was used for encryption/decryption
      */
     @Column(name = "last_used_at", nullable = false)
-    var lastUsedAt: LocalDateTime = LocalDateTime.now(),
-
-    /**
-     * Session version for tracking protocol upgrades
-     */
-    @Column(name = "version", nullable = false)
-    val version: Int = 1
+    var lastUsedAt: LocalDateTime = LocalDateTime.now()
 )

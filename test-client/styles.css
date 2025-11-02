@@ -88,10 +88,248 @@ h1 {
     font-size: 14px;
 }
 
+/* 헤더 */
+.main-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 15px 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.main-header h1 {
+    margin: 0;
+    font-size: 24px;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.user-display {
+    font-weight: bold;
+}
+
+.btn-logout {
+    padding: 8px 16px;
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: white;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.btn-logout:hover {
+    background: rgba(255,255,255,0.3);
+}
+
+.login-container {
+    width: 400px;
+    padding: 30px;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+}
+
+.login-container h2 {
+    text-align: center;
+    margin-bottom: 20px;
+    color: #333;
+}
+
 /* 메인 화면 */
 #mainScreen {
     display: flex;
     flex-direction: column;
+    height: calc(100vh - 70px);
+}
+
+/* 메인 탭 네비게이션 */
+.main-tabs {
+    display: flex;
+    background: white;
+    border-bottom: 2px solid #e0e0e0;
+    padding: 0 30px;
+}
+
+.main-tab-btn {
+    padding: 15px 30px;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.3s;
+}
+
+.main-tab-btn:hover {
+    color: #667eea;
+    background: #f5f5f5;
+}
+
+.main-tab-btn.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+}
+
+.main-tab-content {
+    display: none;
+    flex: 1;
+    overflow: auto;
+}
+
+.main-tab-content.active {
+    display: block;
+}
+
+/* 암호화 테스트 컨테이너 */
+.encryption-test-container,
+.api-test-container {
+    padding: 30px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.encryption-test-container h2,
+.api-test-container h2 {
+    color: #333;
+    margin-bottom: 30px;
+}
+
+.encryption-sections,
+.api-sections {
+    display: grid;
+    gap: 20px;
+}
+
+.test-section {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.test-section h3 {
+    color: #667eea;
+    margin-bottom: 15px;
+    font-size: 18px;
+}
+
+.test-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.test-controls input,
+.test-controls textarea,
+.test-controls select {
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 14px;
+    flex: 1;
+    min-width: 200px;
+}
+
+.test-controls textarea {
+    width: 100%;
+    min-height: 80px;
+    resize: vertical;
+}
+
+.test-controls button {
+    padding: 10px 20px;
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.3s;
+}
+
+.test-controls button:hover {
+    background: #5568d3;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    padding: 12px 30px !important;
+    font-weight: bold;
+}
+
+.result-box {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 5px;
+    padding: 15px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.result-box pre {
+    margin: 0;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.result-success {
+    border-color: #4EC9B0;
+    background: #e8f5f3;
+}
+
+.result-error {
+    border-color: #F48771;
+    background: #ffe8e5;
+}
+
+.log-container {
+    max-height: 500px !important;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.log-entry {
+    padding: 8px;
+    margin-bottom: 5px;
+    border-left: 3px solid #ddd;
+    background: #f8f9fa;
+}
+
+.log-entry.log-success {
+    border-left-color: #4EC9B0;
+    background: #e8f5f3;
+}
+
+.log-entry.log-error {
+    border-left-color: #F48771;
+    background: #ffe8e5;
+}
+
+.log-entry.log-warn {
+    border-left-color: #FFC107;
+    background: #fff8e1;
+}
+
+.log-time {
+    color: #999;
+    margin-right: 10px;
+}
+
+/* 채팅 레이아웃 개선 */
+.chat-layout {
+    display: flex;
+    height: 100%;
 }
 
 header {
@@ -287,11 +525,20 @@ main {
 }
 
 .dialog-content input,
-.dialog-content select {
+.dialog-content select,
+.dialog-content textarea {
     width: 100%;
     padding: 10px;
     margin-bottom: 10px;
     border: 1px solid #ddd;
+    border-radius: 5px;
+    font-family: inherit;
+    font-size: 14px;
+}
+
+.dialog-content textarea {
+    resize: vertical;
+    min-height: 80px;
 }
 
 .dialog-buttons {

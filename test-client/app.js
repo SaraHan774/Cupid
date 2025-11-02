@@ -15,6 +15,9 @@ window.addEventListener('DOMContentLoaded', function() {
 const API_BASE = 'http://localhost:8080/api/v1';
 const WS_BASE = 'http://localhost:8080/ws';  // WebSocket 엔드포인트 (/ws/chat이 아닌 /ws)
 
+// 전역 스코프에 노출 (encryption-test.js에서 사용)
+window.API_BASE = API_BASE;
+
 // 세션 저장
 function saveSession() {
     if (currentUser && accessToken) {
@@ -31,26 +34,32 @@ function restoreSession() {
     const savedAccessToken = localStorage.getItem('accessToken');
     const savedRefreshToken = localStorage.getItem('refreshToken');
 
-    if (savedUser && savedAccessToken) {
-        try {
-            currentUser = JSON.parse(savedUser);
-            accessToken = savedAccessToken;
-            refreshToken = savedRefreshToken;
+        if (savedUser && savedAccessToken) {
+            try {
+                currentUser = JSON.parse(savedUser);
+                accessToken = savedAccessToken;
+                refreshToken = savedRefreshToken;
 
-            console.log('세션 복원됨:', currentUser.username);
+                // 전역 스코프에 노출 (encryption-test.js에서 사용)
+                window.accessToken = accessToken;
+
+                console.log('세션 복원됨:', currentUser.username);
 
             // 로그인 화면 숨기고 메인 화면 표시
             document.getElementById('loginScreen').classList.add('hidden');
             document.getElementById('mainScreen').classList.remove('hidden');
-            document.getElementById('currentUser').textContent = currentUser.username;
+            document.getElementById('currentUserDisplay').textContent = currentUser.username;
+            document.getElementById('logoutBtn').classList.remove('hidden');
 
             // 사용자 ID 표시
             const myUserIdElement = document.getElementById('myUserId');
-            myUserIdElement.textContent = `User ID: ${currentUser.id}`;
-            myUserIdElement.onclick = () => {
-                navigator.clipboard.writeText(currentUser.id);
-                alert('User ID가 클립보드에 복사되었습니다!');
-            };
+            if (myUserIdElement) {
+                myUserIdElement.textContent = `User ID: ${currentUser.id}`;
+                myUserIdElement.onclick = () => {
+                    navigator.clipboard.writeText(currentUser.id);
+                    alert('User ID가 클립보드에 복사되었습니다!');
+                };
+            }
 
             // WebSocket 연결
             connectWebSocket();
@@ -72,8 +81,8 @@ function clearSession() {
     console.log('세션 삭제됨');
 }
 
-// 탭 전환
-function showTab(tab) {
+// 인증 탭 전환
+function showAuthTab(tab) {
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.form').forEach(form => form.classList.remove('active'));
     
@@ -83,6 +92,22 @@ function showTab(tab) {
     } else {
         event.target.classList.add('active');
         document.getElementById('registerForm').classList.add('active');
+    }
+}
+
+// 메인 탭 전환
+function showMainTab(tab) {
+    document.querySelectorAll('.main-tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.main-tab-content').forEach(content => content.classList.remove('active'));
+    
+    event.target.classList.add('active');
+    
+    if (tab === 'chat') {
+        document.getElementById('chatTab').classList.add('active');
+    } else if (tab === 'encryption') {
+        document.getElementById('encryptionTab').classList.add('active');
+    } else if (tab === 'api') {
+        document.getElementById('apiTab').classList.add('active');
     }
 }
 
@@ -141,21 +166,27 @@ async function login() {
             accessToken = data.data.accessToken;
             refreshToken = data.data.refreshToken;
 
+            // 전역 스코프에 노출 (encryption-test.js에서 사용)
+            window.accessToken = accessToken;
+
             // 세션 저장
             saveSession();
 
             // 로그인 화면 숨기고 메인 화면 표시
             document.getElementById('loginScreen').classList.add('hidden');
             document.getElementById('mainScreen').classList.remove('hidden');
-            document.getElementById('currentUser').textContent = currentUser.username;
+            document.getElementById('currentUserDisplay').textContent = currentUser.username;
+            document.getElementById('logoutBtn').classList.remove('hidden');
 
             // 사용자 ID 표시
             const myUserIdElement = document.getElementById('myUserId');
-            myUserIdElement.textContent = `User ID: ${currentUser.id}`;
-            myUserIdElement.onclick = () => {
-                navigator.clipboard.writeText(currentUser.id);
-                alert('User ID가 클립보드에 복사되었습니다!');
-            };
+            if (myUserIdElement) {
+                myUserIdElement.textContent = `User ID: ${currentUser.id}`;
+                myUserIdElement.onclick = () => {
+                    navigator.clipboard.writeText(currentUser.id);
+                    alert('User ID가 클립보드에 복사되었습니다!');
+                };
+            }
 
             // WebSocket 연결
             connectWebSocket();
@@ -189,12 +220,17 @@ async function logout() {
         accessToken = null;
         refreshToken = null;
 
+        // 전역 스코프에서도 제거
+        window.accessToken = null;
+
         // 세션 삭제
         clearSession();
 
         // 로그인 화면으로 돌아가기
         document.getElementById('mainScreen').classList.add('hidden');
         document.getElementById('loginScreen').classList.remove('hidden');
+        document.getElementById('logoutBtn').classList.add('hidden');
+        document.getElementById('currentUserDisplay').textContent = '';
     } catch (error) {
         console.error('로그아웃 오류:', error);
     }
@@ -415,21 +451,9 @@ async function sendMessage() {
                 JSON.stringify(messageData)
             );
 
-            // 발신자 화면에 즉시 표시 (백엔드는 발신자에게 브로드캐스트하지 않음)
-            displayMessage({
-                id: 'temp-' + Date.now(), // 임시 ID
-                channelId: currentChannelId,
-                senderId: currentUser.id,
-                encryptedContent: content,
-                messageType: 'TEXT',
-                status: 'SENT',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            });
-
-            // 입력창 비우기
+            // 입력창 비우기 (메시지는 WebSocket으로 받아서 표시됨)
             messageInput.value = '';
-            console.log('WebSocket으로 메시지 전송 완료');
+            console.log('WebSocket으로 메시지 전송 완료 - 브로드캐스트 대기 중');
         } catch (error) {
             console.error('WebSocket 전송 실패, HTTP로 재시도:', error);
             // WebSocket 실패 시 HTTP로 폴백
@@ -516,6 +540,29 @@ function connectWebSocket() {
 
                 console.log('구독 완료! subscription ID:', subscription.id);
 
+                // 채널 초대 알림 구독
+                const channelDestination = `/topic/user/${currentUser.id}/channels`;
+                console.log('=== 채널 알림 구독 시작 ===');
+                console.log('구독 경로:', channelDestination);
+
+                stompClient.subscribe(channelDestination, function(message) {
+                    console.log('=== 채널 알림 수신! ===');
+                    const data = JSON.parse(message.body);
+                    console.log('받은 알림:', data);
+
+                    if (data.type === 'CHANNEL_INVITED') {
+                        console.log('새 채널에 초대되었습니다:', data.channel);
+                        // 채널 목록 새로고침 (먼저 실행)
+                        loadChannels();
+                        // 알림 표시 - setTimeout으로 비동기 처리하여 loadChannels가 먼저 완료되도록
+                        setTimeout(() => {
+                            alert(`새 채널에 초대되었습니다: ${data.channel.name || data.channel.type + ' 채널'}`);
+                        }, 500);
+                    }
+                });
+
+                console.log('채널 알림 구독 완료!');
+
             }
         },
         function(error) {
@@ -573,7 +620,7 @@ function closeCreateChannelDialog() {
 async function createChannel() {
     const name = document.getElementById('channelName').value;
     const type = document.getElementById('channelType').value;
-    const inviteUserId = document.getElementById('inviteUserId').value.trim();
+    const inviteUserIdsInput = document.getElementById('inviteUserIds').value.trim();
 
     try {
         // 백엔드 CreateChannelRequest: { name?, type, matchId? }
@@ -599,30 +646,48 @@ async function createChannel() {
         if (data.success) {
             const channelId = data.channel?.id;
 
-            // 초대할 사용자 ID가 있으면 채널에 추가
-            if (inviteUserId && channelId) {
-                console.log('사용자 초대 시작:', inviteUserId);
-                try {
-                    const inviteResponse = await fetch(`${API_BASE}/channels/${channelId}/members`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${accessToken}`
-                        },
-                        body: JSON.stringify({ userId: inviteUserId })
-                    });
+            // 초대할 사용자 ID 목록 처리 (콤마로 구분)
+            if (inviteUserIdsInput && channelId) {
+                const userIds = inviteUserIdsInput
+                    .split(',')
+                    .map(id => id.trim())
+                    .filter(id => id.length > 0);
 
-                    const inviteData = await inviteResponse.json();
-                    console.log('사용자 초대 응답:', inviteData);
+                console.log('사용자 초대 시작:', userIds);
 
-                    if (inviteData.success) {
-                        alert('채널이 생성되었고, 사용자가 초대되었습니다!');
-                    } else {
-                        alert(`채널은 생성되었지만 사용자 초대 실패: ${inviteData.error || '알 수 없는 오류'}`);
+                let successCount = 0;
+                let failCount = 0;
+
+                for (const userId of userIds) {
+                    try {
+                        const inviteResponse = await fetch(`${API_BASE}/channels/${channelId}/members`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${accessToken}`
+                            },
+                            body: JSON.stringify({ userId: userId })
+                        });
+
+                        const inviteData = await inviteResponse.json();
+                        console.log(`사용자 ${userId} 초대 응답:`, inviteData);
+
+                        if (inviteData.success) {
+                            successCount++;
+                        } else {
+                            failCount++;
+                            console.warn(`사용자 ${userId} 초대 실패:`, inviteData.error);
+                        }
+                    } catch (inviteError) {
+                        failCount++;
+                        console.error(`사용자 ${userId} 초대 오류:`, inviteError);
                     }
-                } catch (inviteError) {
-                    console.error('사용자 초대 오류:', inviteError);
-                    alert('채널은 생성되었지만 사용자 초대 중 오류 발생');
+                }
+
+                if (failCount === 0) {
+                    alert(`채널이 생성되었고, ${successCount}명의 사용자가 초대되었습니다!`);
+                } else {
+                    alert(`채널이 생성되었습니다.\n성공: ${successCount}명\n실패: ${failCount}명`);
                 }
             } else {
                 alert('채널이 생성되었습니다!');

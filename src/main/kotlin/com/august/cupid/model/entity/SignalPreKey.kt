@@ -26,7 +26,7 @@ import java.util.*
 data class SignalPreKey(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    val id: UUID = UUID.randomUUID(),
+    val id: UUID? = null,
 
     /**
      * User who owns this pre-key

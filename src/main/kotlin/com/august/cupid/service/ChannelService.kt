@@ -29,7 +29,8 @@ class ChannelService(
     private val channelMembersRepository: ChannelMembersRepository,
     private val userRepository: UserRepository,
     private val matchRepository: MatchRepository,
-    private val entityManager: EntityManager
+    private val entityManager: EntityManager,
+    private val messagingTemplate: org.springframework.messaging.simp.SimpMessagingTemplate
 ) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -189,6 +190,21 @@ class ChannelService(
             channelRepository.save(channel)
 
             logger.info("사용자를 채널에 추가 완료: ${user.username} -> ${channel.name ?: "Unnamed"} (${channel.id})")
+
+            // WebSocket으로 초대된 사용자에게 채널 정보 전송
+            try {
+                val channelResponse = channel.toResponse()
+                messagingTemplate.convertAndSend(
+                    "/topic/user/${userId}/channels",
+                    mapOf(
+                        "type" to "CHANNEL_INVITED",
+                        "channel" to channelResponse
+                    )
+                )
+                logger.debug("채널 초대 알림 전송 완료: 사용자 ${userId} -> 채널 ${channel.id}")
+            } catch (e: Exception) {
+                logger.error("채널 초대 알림 전송 실패: ${e.message}", e)
+            }
 
             ApiResponse(true, message = "사용자가 성공적으로 채널에 추가되었습니다")
         } catch (e: Exception) {

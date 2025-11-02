@@ -3,18 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cupid Chat Test Client</title>
+    <title>Cupid Chat - 종합 API 테스트</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <!-- 헤더 -->
+    <header class="main-header">
+        <h1>🔐 Cupid Chat - 종합 API 테스트</h1>
+        <div class="header-actions">
+            <span id="currentUserDisplay" class="user-display"></span>
+            <button id="logoutBtn" class="btn-logout hidden" onclick="logout()">로그아웃</button>
+        </div>
+    </header>
+
     <!-- 로그인 화면 -->
     <div id="loginScreen" class="screen">
-        <div class="container">
-            <h1>Cupid Chat Test</h1>
+        <div class="login-container">
+            <h2>로그인이 필요합니다</h2>
             
             <div class="tab-container">
-                <button class="tab-btn active" onclick="showTab('login')">로그인</button>
-                <button class="tab-btn" onclick="showTab('register')">회원가입</button>
+                <button class="tab-btn active" onclick="showAuthTab('login')">로그인</button>
+                <button class="tab-btn" onclick="showAuthTab('register')">회원가입</button>
             </div>
 
             <!-- 로그인 폼 -->
@@ -36,54 +45,163 @@
         </div>
     </div>
 
-    <!-- 메인 채팅 화면 -->
+    <!-- 메인 테스트 화면 -->
     <div id="mainScreen" class="screen hidden">
-        <!-- 헤더 -->
-        <header>
-            <span id="currentUser">사용자</span>
-            <button onclick="logout()">로그아웃</button>
-        </header>
+        <!-- 메인 탭 네비게이션 -->
+        <div class="main-tabs">
+            <button class="main-tab-btn active" onclick="showMainTab('chat')">💬 채팅 테스트</button>
+            <button class="main-tab-btn" onclick="showMainTab('encryption')">🔐 암호화 테스트</button>
+            <button class="main-tab-btn" onclick="showMainTab('api')">📡 API 테스트</button>
+        </div>
 
-        <div class="main-content">
-            <!-- 사이드바: 채널 목록 -->
-            <aside id="channelsSidebar">
-                <div class="sidebar-header">
-                    <h2>채널</h2>
-                    <button onclick="showCreateChannelDialog()">+</button>
-                </div>
-
-                <div class="channel-list" id="channelList">
-                    <p>채널을 불러오는 중...</p>
-                </div>
-
-                <div class="user-info-section">
-                    <h3>내 정보</h3>
-                    <p class="user-id-display" id="myUserId" title="클릭해서 복사">User ID: Loading...</p>
-                </div>
-            </aside>
-
-            <!-- 메시지 영역 -->
-            <main id="messagesArea">
-                <div id="noChannelSelected" class="no-selection">
-                    <p>채널을 선택하세요</p>
-                </div>
-
-                <div id="chatArea" class="hidden">
-                    <div class="chat-header">
-                        <h3 id="currentChannelName">채널명</h3>
-                        <span id="currentChannelType"></span>
+        <!-- 채팅 테스트 탭 -->
+        <div id="chatTab" class="main-tab-content active">
+            <div class="chat-layout">
+                <!-- 사이드바: 채널 목록 -->
+                <aside id="channelsSidebar" class="sidebar">
+                    <div class="sidebar-header">
+                        <h2>채널</h2>
+                        <button onclick="showCreateChannelDialog()">+</button>
                     </div>
 
-                    <div class="messages-container" id="messagesContainer">
-                        <!-- 메시지들이 여기에 표시됨 -->
+                    <div class="channel-list" id="channelList">
+                        <p>채널을 불러오는 중...</p>
                     </div>
 
-                    <div class="message-input-container">
-                        <input type="text" id="messageInput" placeholder="메시지를 입력하세요..." />
-                        <button onclick="sendMessage()">전송</button>
+                    <div class="user-info-section">
+                        <h3>내 정보</h3>
+                        <p class="user-id-display" id="myUserId" title="클릭해서 복사">User ID: Loading...</p>
                     </div>
+                </aside>
+
+                <!-- 메시지 영역 -->
+                <main id="messagesArea" class="messages-main">
+                    <div id="noChannelSelected" class="no-selection">
+                        <p>채널을 선택하세요</p>
+                    </div>
+
+                    <div id="chatArea" class="hidden">
+                        <div class="chat-header">
+                            <h3 id="currentChannelName">채널명</h3>
+                            <span id="currentChannelType"></span>
+                        </div>
+
+                        <div class="messages-container" id="messagesContainer">
+                            <!-- 메시지들이 여기에 표시됨 -->
+                        </div>
+
+                        <div class="message-input-container">
+                            <input type="text" id="messageInput" placeholder="메시지를 입력하세요..." />
+                            <button onclick="sendMessage()">전송</button>
+                        </div>
+                    </div>
+                </main>
+            </div>
+        </div>
+
+        <!-- 암호화 테스트 탭 -->
+        <div id="encryptionTab" class="main-tab-content">
+            <div class="encryption-test-container">
+                <h2>Signal Protocol E2E 암호화 테스트</h2>
+                
+                <div class="encryption-sections">
+                    <!-- 키 관리 -->
+                    <section class="test-section">
+                        <h3>🔑 키 관리</h3>
+                        <div class="test-controls">
+                            <input type="password" id="keyPassword" placeholder="키 생성 비밀번호 (최소 12자)" />
+                            <button onclick="testGenerateKeys()">키 생성</button>
+                            <button onclick="testCheckKeyStatus()">키 상태 확인</button>
+                        </div>
+                        <div id="keyStatusResult" class="result-box"></div>
+                    </section>
+
+                    <!-- 세션 관리 -->
+                    <section class="test-section">
+                        <h3>🔗 세션 관리</h3>
+                        <div class="test-controls">
+                            <input type="text" id="recipientUserId" placeholder="수신자 User ID" />
+                            <button onclick="testInitializeSession()">세션 초기화</button>
+                            <button onclick="testCheckSession()">세션 상태 확인</button>
+                            <button onclick="testDeleteSession()">세션 삭제</button>
+                        </div>
+                        <div id="sessionResult" class="result-box"></div>
+                    </section>
+
+                    <!-- 메시지 암호화/복호화 -->
+                    <section class="test-section">
+                        <h3>📝 메시지 암호화/복호화</h3>
+                        <div class="test-controls">
+                            <input type="text" id="encryptRecipientId" placeholder="수신자 User ID" />
+                            <textarea id="plaintextMessage" placeholder="암호화할 메시지"></textarea>
+                            <button onclick="testEncryptMessage()">암호화</button>
+                            <button onclick="testDecryptMessage()">복호화</button>
+                        </div>
+                        <div id="encryptionResult" class="result-box"></div>
+                    </section>
+
+                    <!-- 키 백업/복구 -->
+                    <section class="test-section">
+                        <h3>💾 키 백업/복구</h3>
+                        <div class="test-controls">
+                            <input type="password" id="backupPassword" placeholder="백업 비밀번호" />
+                            <input type="number" id="backupExpirationDays" placeholder="만료일 (기본 90)" value="90" />
+                            <button onclick="testCreateBackup()">백업 생성</button>
+                            <button onclick="testGetBackupList()">백업 목록</button>
+                            <button onclick="testRestoreBackup()">백업 복구</button>
+                        </div>
+                        <div id="backupResult" class="result-box"></div>
+                    </section>
+
+                    <!-- 전체 플로우 자동 실행 -->
+                    <section class="test-section">
+                        <h3>🚀 전체 플로우 자동 실행</h3>
+                        <div class="test-controls">
+                            <button class="btn-primary" onclick="runCompleteEncryptionFlow()">전체 플로우 실행</button>
+                            <button onclick="clearEncryptionLogs()">로그 지우기</button>
+                        </div>
+                        <div id="fullFlowResult" class="result-box log-container"></div>
+                    </section>
                 </div>
-            </main>
+            </div>
+        </div>
+
+        <!-- API 테스트 탭 -->
+        <div id="apiTab" class="main-tab-content">
+            <div class="api-test-container">
+                <h2>📡 API 엔드포인트 테스트</h2>
+                
+                <div class="api-sections">
+                    <!-- Health Check -->
+                    <section class="test-section">
+                        <h3>💚 Health Check</h3>
+                        <button onclick="testHealthCheck()">서버 상태 확인</button>
+                        <div id="healthResult" class="result-box"></div>
+                    </section>
+
+                    <!-- 사용자 정보 -->
+                    <section class="test-section">
+                        <h3>👤 사용자 정보</h3>
+                        <button onclick="testGetCurrentUser()">현재 사용자 정보</button>
+                        <div id="userInfoResult" class="result-box"></div>
+                    </section>
+
+                    <!-- 채널 API -->
+                    <section class="test-section">
+                        <h3>📢 채널 API</h3>
+                        <div class="test-controls">
+                            <input type="text" id="testChannelName" placeholder="채널명" />
+                            <select id="testChannelType">
+                                <option value="GROUP">그룹</option>
+                                <option value="DIRECT">1:1</option>
+                            </select>
+                            <button onclick="testCreateChannel()">채널 생성</button>
+                            <button onclick="testGetChannels()">채널 목록</button>
+                        </div>
+                        <div id="channelApiResult" class="result-box"></div>
+                    </section>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -96,9 +214,10 @@
                 <option value="GROUP">그룹 채팅</option>
                 <option value="DIRECT">1:1 채팅</option>
             </select>
-            <input type="text" id="inviteUserId" placeholder="초대할 사용자 ID (선택사항)" />
+            <textarea id="inviteUserIds" placeholder="초대할 사용자 ID 목록 (콤마로 구분)&#10;예: user-id-1, user-id-2, user-id-3" rows="3"></textarea>
             <p class="dialog-hint">
-                * 채널 생성 후 다른 사용자를 초대하려면 해당 사용자의 ID를 입력하세요<br>
+                * 여러 사용자를 초대하려면 사용자 ID를 콤마(,)로 구분하여 입력하세요<br>
+                * 예: 0c9f3fc5-cb9d-4fff-944d-43acc825df24, ed0a0072-a276-4980-a622-09e8446a907c<br>
                 * 사용자 ID는 로그인 후 좌측 하단에서 확인할 수 있습니다
             </p>
             <div class="dialog-buttons">
@@ -114,6 +233,6 @@
     
     <!-- 메인 스크립트 -->
     <script src="app.js"></script>
+    <script src="encryption-test.js"></script>
 </body>
 </html>
-

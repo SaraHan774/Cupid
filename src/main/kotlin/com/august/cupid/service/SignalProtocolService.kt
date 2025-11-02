@@ -49,7 +49,8 @@ class SignalProtocolService(
     private val keyEncryptionUtil: KeyEncryptionUtil,
     private val redisTemplate: RedisTemplate<String, String>,
     private val securityAuditLogger: SecurityAuditLogger,
-    private val encryptionMetricsService: EncryptionMetricsService
+    private val encryptionMetricsService: EncryptionMetricsService,
+    private val entityManager: jakarta.persistence.EntityManager
 ) : EncryptionService {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -93,24 +94,32 @@ class SignalProtocolService(
             }
 
             // 2. 사용자 존재 확인
-            val user = userRepository.findById(userId).orElseThrow {
+            userRepository.findById(userId).orElseThrow {
                 IllegalArgumentException("사용자를 찾을 수 없습니다: $userId")
             }
 
             // 3. 기존 키 삭제 (재생성 시)
-            deleteAllKeys(userId)
+            // 삭제 전 기존 키 존재 여부 확인
+            if (userKeysRepository.existsByUserId(userId)) {
+                logger.info("기존 키 삭제 중: 사용자 $userId")
+                deleteAllKeys(userId)
+            }
 
-            // 4. Identity Key Pair 생성
+            // 4. 사용자 엔티티 조회 - getReference로 managed 프록시 획득
+            // findById 대신 getReference를 사용하여 detached 상태 방지
+            val user = entityManager.getReference(User::class.java, userId)
+
+            // 5. Identity Key Pair 생성
             val identityKeyPair = KeyHelper.generateIdentityKeyPair()
             val registrationId = KeyHelper.generateRegistrationId(false)
 
-            // 5. Signed Pre Key 생성
+            // 6. Signed Pre Key 생성
             val signedPreKeyRecord = KeyHelper.generateSignedPreKey(identityKeyPair, SIGNED_PRE_KEY_ID)
 
-            // 6. One-Time Pre Keys 생성
+            // 7. One-Time Pre Keys 생성
             val preKeys = KeyHelper.generatePreKeys(0, ONE_TIME_PRE_KEY_BATCH_SIZE)
 
-            // 7. Private keys 암호화
+            // 8. Private keys 암호화
             val identityPrivateKeyEncrypted = keyEncryptionUtil.encryptPrivateKey(
                 identityKeyPair.privateKey.serialize(),
                 password
@@ -121,7 +130,7 @@ class SignalProtocolService(
                 password
             )
 
-            // 8. DB에 Identity 및 Signed Pre Key 저장
+            // 9. DB에 Identity 및 Signed Pre Key 저장
             val userKeys = UserKeys(
                 user = user,
                 identityPublicKey = Base64.getEncoder().encodeToString(identityKeyPair.publicKey.serialize()),
@@ -133,7 +142,7 @@ class SignalProtocolService(
             )
             userKeysRepository.save(userKeys)
 
-            // 9. Signed Pre Key 엔티티 저장
+            // 10. Signed Pre Key 엔티티 저장
             val signedPreKeyEntity = SignalSignedPreKey(
                 userId = userId,
                 signedPreKeyId = signedPreKeyRecord.id,
@@ -145,7 +154,7 @@ class SignalProtocolService(
             )
             signalSignedPreKeyRepository.save(signedPreKeyEntity)
 
-            // 10. One-Time Pre Keys 저장
+            // 11. One-Time Pre Keys 저장
             preKeys.forEach { preKeyRecord ->
                 val preKeyPrivateEncrypted = keyEncryptionUtil.encryptPrivateKey(
                     preKeyRecord.keyPair.privateKey.serialize(),
@@ -165,7 +174,7 @@ class SignalProtocolService(
 
             logger.info("사용자 ${userId}의 Signal Protocol 키 생성 완료 (Pre Keys: ${preKeys.size})")
 
-            // 11. KeyRegistrationRequest 반환 (interface 요구사항)
+            // 12. KeyRegistrationRequest 반환 (interface 요구사항)
             val result = KeyRegistrationRequest(
                 identityPublicKey = Base64.getEncoder().encodeToString(identityKeyPair.publicKey.serialize()),
                 registrationId = registrationId,
@@ -896,15 +905,29 @@ class SignalProtocolService(
      */
     override fun deleteAllKeys(userId: UUID) {
         try {
+            // 순서: 외래키 제약조건을 고려하여 의존적인 엔티티부터 삭제
             signalSessionRepository.deleteAllByUserId(userId)
             signalIdentityRepository.deleteAllByUserId(userId)
             signalPreKeyRepository.deleteAllByUserId(userId)
             signalSignedPreKeyRepository.deleteAllByUserId(userId)
-            userKeysRepository.deleteByUserId(userId)
+
+            // UserKeys는 명시적으로 조회 후 삭제하여 낙관적 잠금 충돌 방지
+            val userKeysToDelete = userKeysRepository.findByUserId(userId)
+            if (userKeysToDelete != null) {
+                userKeysRepository.delete(userKeysToDelete)
+                userKeysRepository.flush()  // 즉시 플러시하여 삭제 확인
+            }
+
+            // 다른 레포지토리도 플러시
+            signalPreKeyRepository.flush()
+            signalSignedPreKeyRepository.flush()
+            signalIdentityRepository.flush()
+            signalSessionRepository.flush()
 
             logger.info("사용자 ${userId}의 모든 키 및 세션 삭제 완료")
         } catch (e: Exception) {
             logger.error("모든 키 삭제 실패: ${e.message}", e)
+            throw e  // 예외를 다시 던져서 호출자가 처리할 수 있도록
         }
     }
 
@@ -1152,3 +1175,4 @@ class SignalProtocolService(
         override fun deleteAllSessions(name: String) { sessions.keys.removeIf { it.name == name } }
     }
 }
+

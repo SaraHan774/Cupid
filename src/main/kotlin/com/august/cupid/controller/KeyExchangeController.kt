@@ -4,7 +4,6 @@ import com.august.cupid.model.dto.*
 import com.august.cupid.security.RateLimit
 import com.august.cupid.security.RateLimitKeyType
 import com.august.cupid.service.EncryptionService
-import com.august.cupid.service.KeyBackupService
 import com.august.cupid.service.SignalProtocolService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -19,7 +18,7 @@ import jakarta.validation.Valid
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
-import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
 import java.time.LocalDateTime
 import java.util.*
@@ -45,11 +44,25 @@ import java.util.*
 @SecurityRequirement(name = "bearerAuth")
 class KeyExchangeController(
     private val encryptionService: EncryptionService,
-    private val signalProtocolService: SignalProtocolService,
-    private val keyBackupService: KeyBackupService
+    private val signalProtocolService: SignalProtocolService
 ) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
+
+    /**
+     * Authentication에서 userId 추출 (헬퍼 메서드)
+     */
+    private fun getUserIdFromAuthentication(authentication: Authentication?): UUID? {
+        if (authentication == null || authentication.name.isBlank()) {
+            return null
+        }
+        return try {
+            UUID.fromString(authentication.name)
+        } catch (e: IllegalArgumentException) {
+            logger.error("잘못된 사용자 ID 형식: ${authentication.name}")
+            null
+        }
+    }
 
     /**
      * 1. Signal Protocol 키 생성
@@ -109,9 +122,7 @@ class KeyExchangeController(
         )
     )
     fun generateKeys(
-        @AuthenticationPrincipal
-        @Parameter(description = "User ID from JWT token", hidden = true)
-        userId: UUID,
+        authentication: Authentication,
         @RequestParam(required = false)
         @Parameter(
             description = "User password for encrypting private keys (optional, uses default if not provided)",
@@ -120,6 +131,28 @@ class KeyExchangeController(
         password: String?
     ): ResponseEntity<ApiResponse<KeyStatusResponse>> {
         return try {
+            // 인증 체크 및 userId 추출
+            val userIdString = authentication.name
+            if (userIdString.isBlank()) {
+                logger.warn("키 생성 요청 실패: 사용자 인증되지 않음")
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse<KeyStatusResponse>(
+                    success = false,
+                    error = "인증이 필요합니다. 로그인 후 다시 시도하세요.",
+                    errorCode = "UNAUTHORIZED"
+                ))
+            }
+            
+            val userId = try {
+                UUID.fromString(userIdString)
+            } catch (e: IllegalArgumentException) {
+                logger.error("잘못된 사용자 ID 형식: $userIdString")
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse<KeyStatusResponse>(
+                    success = false,
+                    error = "잘못된 인증 정보입니다.",
+                    errorCode = "INVALID_AUTH"
+                ))
+            }
+            
             logger.info("키 생성 요청: 사용자 $userId")
 
             // Use provided password or default (in production, require password)
@@ -214,11 +247,12 @@ class KeyExchangeController(
         @PathVariable
         @Parameter(description = "Target user ID whose keys to retrieve", example = "123e4567-e89b-12d3-a456-426614174000")
         userId: UUID,
-        @AuthenticationPrincipal
-        @Parameter(description = "Current user ID from JWT token", hidden = true)
-        currentUserId: UUID
+        authentication: Authentication
     ): ResponseEntity<ApiResponse<PreKeyBundleDto>> {
         return try {
+            val currentUserId = getUserIdFromAuthentication(authentication) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ApiResponse(success = false, error = "인증이 필요합니다.", errorCode = "UNAUTHORIZED")
+            )
             logger.debug("공개키 번들 조회: $currentUserId -> $userId")
 
             val keyBundle = try {
@@ -265,10 +299,13 @@ class KeyExchangeController(
                 "This creates an encrypted session for future message exchange."
     )
     fun initiateKeyExchange(
-        @AuthenticationPrincipal senderUserId: UUID,
+        authentication: Authentication,
         @Valid @RequestBody request: SessionInitRequest
     ): ResponseEntity<ApiResponse<SessionInitResponse>> {
         return try {
+            val senderUserId = getUserIdFromAuthentication(authentication) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ApiResponse(success = false, error = "인증이 필요합니다.", errorCode = "UNAUTHORIZED")
+            )
             logger.info("키 교환 시작: $senderUserId -> ${request.recipientId}")
 
             // Get recipient's pre-key bundle
@@ -337,10 +374,13 @@ class KeyExchangeController(
                 "This completes the session establishment on the recipient side."
     )
     fun processKeyExchange(
-        @AuthenticationPrincipal recipientUserId: UUID,
+        authentication: Authentication,
         @Valid @RequestBody request: SessionProcessRequest
     ): ResponseEntity<ApiResponse<SessionProcessResponse>> {
         return try {
+            val recipientUserId = getUserIdFromAuthentication(authentication) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ApiResponse(success = false, error = "인증이 필요합니다.", errorCode = "UNAUTHORIZED")
+            )
             logger.info("키 교환 처리: ${request.senderId} -> $recipientUserId")
 
             // TODO: Process key exchange after refactoring SignalProtocolService
@@ -389,10 +429,13 @@ class KeyExchangeController(
                 "**WARNING**: For testing only. In production, encryption should occur on the client."
     )
     fun encryptMessage(
-        @AuthenticationPrincipal senderUserId: UUID,
+        authentication: Authentication,
         @Valid @RequestBody request: EncryptRequest
     ): ResponseEntity<ApiResponse<EncryptResponse>> {
         return try {
+            val senderUserId = getUserIdFromAuthentication(authentication) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ApiResponse(success = false, error = "인증이 필요합니다.", errorCode = "UNAUTHORIZED")
+            )
             val encrypted = encryptionService.encryptMessage(
                 senderUserId,
                 request.recipientId,
@@ -438,10 +481,13 @@ class KeyExchangeController(
                 "**WARNING**: For testing only. In production, decryption should occur on the client."
     )
     fun decryptMessage(
-        @AuthenticationPrincipal recipientUserId: UUID,
+        authentication: Authentication,
         @Valid @RequestBody request: DecryptRequest
     ): ResponseEntity<ApiResponse<DecryptResponse>> {
         return try {
+            val recipientUserId = getUserIdFromAuthentication(authentication) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ApiResponse(success = false, error = "인증이 필요합니다.", errorCode = "UNAUTHORIZED")
+            )
             val encrypted = EncryptedMessageDto(
                 senderId = request.senderId,
                 recipientId = recipientUserId,
@@ -478,10 +524,13 @@ class KeyExchangeController(
     @RateLimit(requests = 100, windowMinutes = 60, keyType = RateLimitKeyType.USER)
     @Operation(summary = "Check session status", description = "Checks if an encrypted session exists with the specified peer")
     fun getSessionStatus(
-        @AuthenticationPrincipal userId: UUID,
+        authentication: Authentication,
         @PathVariable peerId: UUID
     ): ResponseEntity<ApiResponse<SessionStatusResponse>> {
         return try {
+            val userId = getUserIdFromAuthentication(authentication) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ApiResponse(success = false, error = "인증이 필요합니다.", errorCode = "UNAUTHORIZED")
+            )
             val hasSession = encryptionService.hasSession(userId, peerId)
 
             val response = SessionStatusResponse(
@@ -509,10 +558,13 @@ class KeyExchangeController(
     @RateLimit(requests = 100, windowMinutes = 60, keyType = RateLimitKeyType.USER)
     @Operation(summary = "Delete session", description = "Deletes the encrypted session with the specified peer")
     fun deleteSession(
-        @AuthenticationPrincipal userId: UUID,
+        authentication: Authentication,
         @PathVariable peerId: UUID
     ): ResponseEntity<ApiResponse<Unit>> {
         return try {
+            val userId = getUserIdFromAuthentication(authentication) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ApiResponse(success = false, error = "인증이 필요합니다.", errorCode = "UNAUTHORIZED")
+            )
             encryptionService.deleteSession(userId, peerId)
             ResponseEntity.ok(ApiResponse(success = true, message = "Session deleted successfully"))
         } catch (e: Exception) {
@@ -534,10 +586,13 @@ class KeyExchangeController(
                 "This action is irreversible and will require re-generating keys."
     )
     fun deleteAllSessions(
-        @AuthenticationPrincipal userId: UUID,
+        authentication: Authentication,
         @RequestParam(required = true) confirm: Boolean
     ): ResponseEntity<ApiResponse<Unit>> {
         return try {
+            val userId = getUserIdFromAuthentication(authentication) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ApiResponse(success = false, error = "인증이 필요합니다.", errorCode = "UNAUTHORIZED")
+            )
             if (!confirm) {
                 return ResponseEntity.badRequest().body(ApiResponse(
                     success = false,
@@ -569,9 +624,12 @@ class KeyExchangeController(
     @RateLimit(requests = 10, windowMinutes = 1, keyType = RateLimitKeyType.USER)
     @Operation(summary = "Get key status", description = "Retrieves the current status of the user's cryptographic keys")
     fun getKeyStatus(
-        @AuthenticationPrincipal userId: UUID
+        authentication: Authentication
     ): ResponseEntity<ApiResponse<KeyStatusResponse>> {
         return try {
+            val userId = getUserIdFromAuthentication(authentication) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ApiResponse(success = false, error = "인증이 필요합니다.", errorCode = "UNAUTHORIZED")
+            )
             // Check if user has keys by trying to get status
             val keyStatus = encryptionService.getKeyStatus(userId)
             val hasKeys = keyStatus.hasIdentityKey
@@ -619,10 +677,13 @@ class KeyExchangeController(
                 "CAUTION: This operation is expensive. Private keys are encrypted before storage."
     )
     fun generateKeysNewPath(
-        @AuthenticationPrincipal userId: UUID,
+        authentication: Authentication,
         @RequestParam(required = false) password: String?
     ): ResponseEntity<ApiResponse<KeyStatusResponse>> {
         return try {
+            val userId = getUserIdFromAuthentication(authentication) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ApiResponse(success = false, error = "인증이 필요합니다.", errorCode = "UNAUTHORIZED")
+            )
             logger.info("키 생성 요청 (새 경로): 사용자 $userId")
 
             // 비밀번호 검증
@@ -692,10 +753,13 @@ class KeyExchangeController(
                 "Keys should be generated using generateIdentityKeys() first."
     )
     fun registerKeys(
-        @AuthenticationPrincipal userId: UUID,
+        authentication: Authentication,
         @Valid @RequestBody request: KeyRegistrationRequest
     ): ResponseEntity<ApiResponse<Unit>> {
         return try {
+            val userId = getUserIdFromAuthentication(authentication) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ApiResponse(success = false, error = "인증이 필요합니다.", errorCode = "UNAUTHORIZED")
+            )
             logger.info("키 등록 요청: 사용자 $userId")
 
             // registerKeys() 메서드 사용 (태스크 요구사항)
@@ -755,9 +819,12 @@ class KeyExchangeController(
     )
     fun getPublicKeyBundleNewPath(
         @PathVariable userId: UUID,
-        @AuthenticationPrincipal currentUserId: UUID
+        authentication: Authentication
     ): ResponseEntity<ApiResponse<PreKeyBundleDto>> {
         return try {
+            val currentUserId = getUserIdFromAuthentication(authentication) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ApiResponse(success = false, error = "인증이 필요합니다.", errorCode = "UNAUTHORIZED")
+            )
             logger.debug("공개키 번들 조회 (새 경로): $currentUserId -> $userId")
 
             val keyBundle = try {
@@ -811,10 +878,13 @@ class KeyExchangeController(
                 "This is the first step in establishing E2E encryption between two users."
     )
     fun initializeSessionNewPath(
-        @AuthenticationPrincipal senderUserId: UUID,
+        authentication: Authentication,
         @Valid @RequestBody request: SessionInitRequest
     ): ResponseEntity<ApiResponse<SessionInitResponse>> {
         return try {
+            val senderUserId = getUserIdFromAuthentication(authentication) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ApiResponse(success = false, error = "인증이 필요합니다.", errorCode = "UNAUTHORIZED")
+            )
             logger.info("세션 초기화 요청: $senderUserId -> ${request.recipientId}")
 
             // 수신자의 pre-key bundle 조회
@@ -880,191 +950,6 @@ class KeyExchangeController(
         }
     }
 
-    // ===================================================================
-    // Key Backup/Recovery Endpoints (Task 3)
-    // ===================================================================
-
-    /**
-     * 키 백업 생성
-     * POST /api/v1/keys/backup
-     *
-     * SECURITY:
-     * - 백업 데이터는 별도의 백업 비밀번호로 암호화
-     * - AES-256-GCM 암호화 사용
-     * - SHA-256 해시로 무결성 검증
-     *
-     * RATE LIMIT: 5 requests per hour per user
-     */
-    @PostMapping("/api/v1/keys/backup")
-    @RateLimit(requests = 5, windowMinutes = 60, keyType = RateLimitKeyType.USER)
-    @Operation(
-        summary = "Create key backup",
-        description = "Creates an encrypted backup of the user's Signal Protocol keys. " +
-                "The backup is encrypted with a separate backup password (different from user password). " +
-                "Backups expire after 90 days by default (configurable)."
-    )
-    fun createBackup(
-        @AuthenticationPrincipal userId: UUID,
-        @Valid @RequestBody request: KeyBackupRequest
-    ): ResponseEntity<ApiResponse<KeyBackupResponse>> {
-        return try {
-            logger.info("키 백업 생성 요청: 사용자 $userId")
-
-            val response = keyBackupService.createBackup(userId, request)
-
-            ResponseEntity.ok(ApiResponse(
-                success = true,
-                data = response,
-                message = "키 백업이 성공적으로 생성되었습니다"
-            ))
-        } catch (e: IllegalArgumentException) {
-            logger.warn("키 백업 생성 실패 (잘못된 입력): ${e.message}")
-            ResponseEntity.badRequest().body(ApiResponse(
-                success = false,
-                error = e.message ?: "Invalid backup request"
-            ))
-        } catch (e: SecurityException) {
-            logger.error("키 백업 생성 실패 (보안 오류): ${e.message}", e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
-                success = false,
-                error = "Key backup creation failed due to security error: ${e.message}"
-            ))
-        } catch (e: Exception) {
-            logger.error("키 백업 생성 실패: ${e.message}", e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
-                success = false,
-                error = "Key backup creation failed. Please try again later."
-            ))
-        }
-    }
-
-    /**
-     * 키 백업 복구
-     * POST /api/v1/keys/backup/restore
-     *
-     * SECURITY:
-     * - 백업 비밀번호로 복호화
-     * - 백업 무결성 검증 (SHA-256 해시)
-     * - 복구 시 백업 사용 표시 (재사용 방지)
-     *
-     * RATE LIMIT: 3 requests per hour per user
-     */
-    @PostMapping("/api/v1/keys/backup/restore")
-    @RateLimit(requests = 3, windowMinutes = 60, keyType = RateLimitKeyType.USER)
-    @Operation(
-        summary = "Restore keys from backup",
-        description = "Restores Signal Protocol keys from an encrypted backup. " +
-                "Requires the backup password. After restore, the backup is marked as used and cannot be reused for security."
-    )
-    fun restoreBackup(
-        @AuthenticationPrincipal userId: UUID,
-        @Valid @RequestBody request: KeyBackupRestoreRequest
-    ): ResponseEntity<ApiResponse<Unit>> {
-        return try {
-            logger.info("키 백업 복구 요청: 사용자 $userId, 백업 ID ${request.backupId}")
-
-            val success = keyBackupService.restoreBackup(userId, request)
-
-            if (success) {
-                ResponseEntity.ok(ApiResponse(
-                    success = true,
-                    message = "키 백업이 성공적으로 복구되었습니다"
-                ))
-            } else {
-                ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
-                    success = false,
-                    error = "Key backup restore failed"
-                ))
-            }
-        } catch (e: IllegalArgumentException) {
-            logger.warn("키 백업 복구 실패 (잘못된 입력): ${e.message}")
-            ResponseEntity.badRequest().body(ApiResponse(
-                success = false,
-                error = e.message ?: "Invalid restore request"
-            ))
-        } catch (e: SecurityException) {
-            logger.error("키 백업 복구 실패 (보안 오류): ${e.message}", e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
-                success = false,
-                error = "Key backup restore failed due to security error: ${e.message}"
-            ))
-        } catch (e: Exception) {
-            logger.error("키 백업 복구 실패: ${e.message}", e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
-                success = false,
-                error = "Key backup restore failed. Please try again later."
-            ))
-        }
-    }
-
-    /**
-     * 키 백업 목록 조회
-     * GET /api/v1/keys/backup
-     *
-     * RATE LIMIT: 10 requests per minute per user
-     */
-    @GetMapping("/api/v1/keys/backup")
-    @RateLimit(requests = 10, windowMinutes = 1, keyType = RateLimitKeyType.USER)
-    @Operation(
-        summary = "Get backup list",
-        description = "Retrieves a list of all backups for the current user, including active and expired backups."
-    )
-    fun getBackupList(
-        @AuthenticationPrincipal userId: UUID
-    ): ResponseEntity<ApiResponse<KeyBackupListResponse>> {
-        return try {
-            val response = keyBackupService.getBackupList(userId)
-
-            ResponseEntity.ok(ApiResponse(
-                success = true,
-                data = response
-            ))
-        } catch (e: Exception) {
-            logger.error("백업 목록 조회 실패: ${e.message}", e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
-                success = false,
-                error = "Failed to retrieve backup list"
-            ))
-        }
-    }
-
-    /**
-     * 키 백업 삭제
-     * DELETE /api/v1/keys/backup/{backupId}
-     *
-     * RATE LIMIT: 10 requests per hour per user
-     */
-    @DeleteMapping("/api/v1/keys/backup/{backupId}")
-    @RateLimit(requests = 10, windowMinutes = 60, keyType = RateLimitKeyType.USER)
-    @Operation(
-        summary = "Delete backup",
-        description = "Deletes a specific backup by ID. Only backups owned by the current user can be deleted."
-    )
-    fun deleteBackup(
-        @AuthenticationPrincipal userId: UUID,
-        @PathVariable backupId: UUID
-    ): ResponseEntity<ApiResponse<Unit>> {
-        return try {
-            keyBackupService.deleteBackup(userId, backupId)
-
-            ResponseEntity.ok(ApiResponse(
-                success = true,
-                message = "백업이 성공적으로 삭제되었습니다"
-            ))
-        } catch (e: IllegalArgumentException) {
-            logger.warn("백업 삭제 실패 (잘못된 입력): ${e.message}")
-            ResponseEntity.badRequest().body(ApiResponse(
-                success = false,
-                error = e.message ?: "Invalid backup ID"
-            ))
-        } catch (e: Exception) {
-            logger.error("백업 삭제 실패: ${e.message}", e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
-                success = false,
-                error = "Failed to delete backup"
-            ))
-        }
-    }
 }
 
 /**

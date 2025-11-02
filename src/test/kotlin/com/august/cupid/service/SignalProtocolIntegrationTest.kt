@@ -10,7 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.TestPropertySource
-import org.springframework.transaction.annotation.Transactional
+import org.springframework.test.annotation.DirtiesContext
 import java.time.LocalDateTime
 import java.util.*
 import kotlin.test.*
@@ -29,7 +29,7 @@ import kotlin.test.*
  */
 @SpringBootTest
 @ActiveProfiles("test")
-@Transactional
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 @TestPropertySource(properties = [
     "spring.data.mongodb.database=testdb_app",
     "spring.data.redis.host=localhost",

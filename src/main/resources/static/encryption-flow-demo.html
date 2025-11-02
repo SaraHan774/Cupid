@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signal Protocol E2E 암호화 플로우 데모</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .content {
+            padding: 30px;
+        }
+        .config {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .config label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        .config input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 5px;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 500px;
+            overflow-y: auto;
+            margin-top: 20px;
+            line-height: 1.6;
+        }
+        .step {
+            margin: 10px 0;
+            padding: 10px;
+            background: #2d2d2d;
+            border-left: 4px solid #4EC9B0;
+            border-radius: 5px;
+        }
+        .step.success {
+            border-left-color: #4EC9B0;
+            background: #1e3a3a;
+        }
+        .step.error {
+            border-left-color: #F48771;
+            background: #3a1e1e;
+        }
+        .step.info {
+            border-left-color: #4A9EFF;
+            background: #1e1e3a;
+        }
+        .step-number {
+            color: #4EC9B0;
+            font-weight: bold;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .status-running {
+            background: #4A9EFF;
+            color: white;
+        }
+        .status-success {
+            background: #4EC9B0;
+            color: #000;
+        }
+        .status-error {
+            background: #F48771;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔐 Signal Protocol E2E 암호화 통합 플로우</h1>
+            <p>실시간 암호화 프로세스 테스트</p>
+        </div>
+        <div class="content">
+            <div class="config">
+                <label>API Base URL</label>
+                <input type="text" id="apiUrl" value="http://localhost:8080/api/v1" placeholder="API URL">
+                <button class="btn" onclick="updateApiUrl()">설정 업데이트</button>
+            </div>
+
+            <div style="text-align: center; margin: 20px 0;">
+                <button class="btn" onclick="runFlow()" id="runBtn">🚀 전체 플로우 실행</button>
+                <button class="btn" onclick="clearLog()">🗑️ 로그 지우기</button>
+            </div>
+
+            <div id="log" class="log">
+                <div class="step info">
+                    <span class="step-number">ℹ️</span> 준비 완료. "전체 플로우 실행" 버튼을 클릭하세요.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let API_URL = 'http://localhost:8080/api/v1';
+        let isRunning = false;
+
+        function updateApiUrl() {
+            API_URL = document.getElementById('apiUrl').value;
+            addLog('API URL 업데이트: ' + API_URL, 'info');
+        }
+
+        function addLog(message, type = 'info') {
+            const log = document.getElementById('log');
+            const step = document.createElement('div');
+            step.className = `step ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            
+            let icon = 'ℹ️';
+            if (type === 'success') icon = '✅';
+            if (type === 'error') icon = '❌';
+            
+            step.innerHTML = `<span class="step-number">${icon}</span> <strong>[${timestamp}]</strong> ${message}`;
+            log.appendChild(step);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+            addLog('로그가 지워졌습니다.', 'info');
+        }
+
+        async function apiCall(fn, retries = 3) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fn();
+                    if (response.status === 429) {
+                        const retryAfter = parseInt(response.headers.get('Retry-After') || '60');
+                        addLog(`Rate Limit 초과. ${retryAfter}초 후 재시도...`, 'info');
+                        await new Promise(r => setTimeout(r, retryAfter * 1000));
+                        continue;
+                    }
+                    if (!response.ok) {
+                        const error = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+                        throw new Error(error.error || error.message || `HTTP ${response.status}`);
+                    }
+                    return await response.json();
+                } catch (error) {
+                    if (i === retries - 1) throw error;
+                    const delay = Math.pow(2, i) * 1000;
+                    addLog(`재시도 중... (${i + 1}/${retries})`, 'info');
+                    await new Promise(r => setTimeout(r, delay));
+                }
+            }
+        }
+
+        async function register(username, password, email) {
+            return await apiCall(() => fetch(`${API_URL}/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password, email })
+            }));
+        }
+
+        async function login(username, password) {
+            const result = await apiCall(() => fetch(`${API_URL}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            }));
+            return result.token;
+        }
+
+        async function generateKeys(token, password) {
+            return await apiCall(() => fetch(
+                `${API_URL}/encryption/keys/generate?password=${encodeURIComponent(password)}`,
+                {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+                }
+            ));
+        }
+
+        async function checkKeyStatus(token) {
+            return await apiCall(() => fetch(`${API_URL}/encryption/keys/status`, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+            }));
+        }
+
+        async function initializeSession(token, recipientId) {
+            return await apiCall(() => fetch(`${API_URL}/encryption/key-exchange/initiate`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ recipientId, recipientDeviceId: 1 })
+            }));
+        }
+
+        async function checkSessionStatus(token, peerId) {
+            const result = await apiCall(() => fetch(`${API_URL}/encryption/session/${peerId}`, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+            }));
+            return result.data.hasSession;
+        }
+
+        async function encryptMessage(token, recipientId, plaintext) {
+            return await apiCall(() => fetch(`${API_URL}/encryption/encrypt`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ recipientId, plaintext })
+            }));
+        }
+
+        async function decryptMessage(token, senderId, ciphertext, messageType = 1) {
+            return await apiCall(() => fetch(`${API_URL}/encryption/decrypt`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ senderId, ciphertext, messageType })
+            }));
+        }
+
+        async function createBackup(token, backupPassword, expirationDays = 90) {
+            return await apiCall(() => fetch(`${API_URL}/keys/backup`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    backupPassword,
+                    expirationDays,
+                    metadata: JSON.stringify({ device_name: 'Browser Test', app_version: '1.0.0' })
+                })
+            }));
+        }
+
+        async function getBackupList(token) {
+            return await apiCall(() => fetch(`${API_URL}/keys/backup`, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+            }));
+        }
+
+        async function runFlow() {
+            if (isRunning) return;
+            isRunning = true;
+            const btn = document.getElementById('runBtn');
+            btn.disabled = true;
+            btn.textContent = '실행 중...';
+
+            try {
+                clearLog();
+                const timestamp = Date.now();
+                addLog('=== Signal Protocol E2E 암호화 통합 플로우 시작 ===', 'info');
+
+                // Step 1: 사용자 등록
+                addLog('Step 1: 사용자 등록 중...', 'info');
+                const alicePassword = `Alice${timestamp}!`;
+                const bobPassword = `Bob${timestamp}!`;
+                const aliceUser = await register(`alice_${timestamp}`, alicePassword, `alice_${timestamp}@test.com`);
+                const bobUser = await register(`bob_${timestamp}`, bobPassword, `bob_${timestamp}@test.com`);
+                addLog(`✓ Alice 등록 완료 (ID: ${aliceUser.id.substring(0, 8)}...)`, 'success');
+                addLog(`✓ Bob 등록 완료 (ID: ${bobUser.id.substring(0, 8)}...)`, 'success');
+
+                // Step 2: 로그인
+                addLog('Step 2: 로그인 중...', 'info');
+                const aliceToken = await login(`alice_${timestamp}`, alicePassword);
+                const bobToken = await login(`bob_${timestamp}`, bobPassword);
+                addLog('✓ Alice 로그인 완료', 'success');
+                addLog('✓ Bob 로그인 완료', 'success');
+
+                // Step 3: 키 생성
+                addLog('Step 3: Signal Protocol 키 생성 중...', 'info');
+                await generateKeys(aliceToken, alicePassword);
+                addLog('✓ Alice 키 생성 완료', 'success');
+                await generateKeys(bobToken, bobPassword);
+                addLog('✓ Bob 키 생성 완료', 'success');
+
+                // Step 4: 키 상태 확인
+                addLog('Step 4: 키 상태 확인...', 'info');
+                const aliceStatus = await checkKeyStatus(aliceToken);
+                const bobStatus = await checkKeyStatus(bobToken);
+                addLog(`✓ Alice: ${aliceStatus.data.hasIdentityKey ? '키 있음' : '키 없음'}`, 'success');
+                addLog(`✓ Bob: ${bobStatus.data.hasIdentityKey ? '키 있음' : '키 없음'}`, 'success');
+
+                // Step 5: 세션 초기화
+                addLog('Step 5: 세션 초기화 중...', 'info');
+                await initializeSession(aliceToken, bobUser.id);
+                addLog('✓ 세션 초기화 완료', 'success');
+
+                // Step 6: 세션 상태 확인
+                addLog('Step 6: 세션 상태 확인...', 'info');
+                const hasSession = await checkSessionStatus(aliceToken, bobUser.id);
+                addLog(`✓ 세션 존재: ${hasSession}`, 'success');
+
+                // Step 7: 메시지 암호화
+                addLog('Step 7: 메시지 암호화 중...', 'info');
+                const message = 'Hello, Bob! This is a secret message.';
+                const encrypted = await encryptMessage(aliceToken, bobUser.id, message);
+                addLog(`✓ 암호화 완료 (길이: ${encrypted.data.ciphertext.length} chars)`, 'success');
+
+                // Step 8: 메시지 복호화
+                addLog('Step 8: 메시지 복호화 중...', 'info');
+                const decrypted = await decryptMessage(
+                    bobToken, aliceUser.id, 
+                    encrypted.data.ciphertext, 
+                    encrypted.data.messageType
+                );
+                const match = message === decrypted.data.plaintext;
+                addLog(`✓ 복호화 완료: "${decrypted.data.plaintext}"`, 'success');
+                addLog(`✓ 메시지 일치: ${match ? '✅ 성공' : '❌ 실패'}`, match ? 'success' : 'error');
+
+                // Step 9: 백업 생성
+                addLog('Step 9: 키 백업 생성 중...', 'info');
+                const backupPassword = `Backup${timestamp}!`;
+                const backup = await createBackup(aliceToken, backupPassword, 90);
+                addLog(`✓ 백업 생성 완료 (ID: ${backup.data.backupId.substring(0, 8)}...)`, 'success');
+
+                // Step 10: 백업 목록 조회
+                addLog('Step 10: 백업 목록 조회...', 'info');
+                const backupList = await getBackupList(aliceToken);
+                addLog(`✓ 백업 개수: ${backupList.data.totalCount} (활성: ${backupList.data.activeCount})`, 'success');
+
+                addLog('\n=== 🎉 모든 작업 완료! ===', 'success');
+            } catch (error) {
+                addLog(`\n❌ 오류 발생: ${error.message}`, 'error');
+                console.error('전체 에러:', error);
+            } finally {
+                isRunning = false;
+                btn.disabled = false;
+                btn.textContent = '🚀 전체 플로우 실행';
+            }
+        }
+    </script>
+</body>
+</html>
+
