@@ -4,6 +4,12 @@ import com.august.cupid.model.dto.*
 import com.august.cupid.service.EncryptionService
 import com.august.cupid.service.SignalProtocolService
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.media.Content
+import io.swagger.v3.oas.annotations.media.ExampleObject
+import io.swagger.v3.oas.annotations.media.Schema
+import io.swagger.v3.oas.annotations.responses.ApiResponse
+import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import jakarta.validation.Valid
@@ -54,12 +60,91 @@ class KeyExchangeController(
     @PostMapping("/keys/generate")
     @Operation(
         summary = "Generate Signal Protocol keys",
-        description = "Creates identity key pair, signed pre-key, and one-time pre-keys for E2E encryption. " +
-                "CAUTION: This operation is expensive. Private keys are encrypted before storage."
+        description = """
+            Creates identity key pair, signed pre-key, and one-time pre-keys for E2E encryption.
+            
+            **Security Features:**
+            - Generates Curve25519 identity key pair
+            - Creates signed pre-key with 30-day expiry
+            - Generates 100 one-time pre-keys for X3DH protocol
+            - All private keys are encrypted with AES-256-GCM before storage
+            - Returns only public key information
+            
+            **Rate Limit:** 1 request per hour per user (expensive operation)
+            
+            **Example Flow:**
+            1. User calls this endpoint to generate keys
+            2. Server generates and stores encrypted keys
+            3. User receives public key information
+            4. Keys are ready for key exchange with other users
+        """.trimIndent()
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Keys generated successfully",
+                content = [Content(
+                    mediaType = "application/json",
+                    schema = Schema(implementation = ApiResponse::class),
+                    examples = [ExampleObject(
+                        name = "Success Response",
+                        value = """{
+                            "success": true,
+                            "data": {
+                                "userId": "123e4567-e89b-12d3-a456-426614174000",
+                                "deviceId": 1,
+                                "hasIdentityKey": true,
+                                "hasSignedPreKey": true,
+                                "signedPreKeyExpiry": "2025-12-02T12:00:00",
+                                "availableOneTimePreKeys": 100,
+                                "identityKeyCreatedAt": "2025-11-02T12:00:00"
+                            },
+                            "message": "Signal Protocol keys generated successfully"
+                        }"""
+                    )]
+                )]
+            ),
+            ApiResponse(
+                responseCode = "400",
+                description = "Invalid input or user already has keys",
+                content = [Content(
+                    mediaType = "application/json",
+                    examples = [ExampleObject(
+                        name = "Error Response",
+                        value = """{
+                            "success": false,
+                            "error": "User already has active keys"
+                        }"""
+                    )]
+                )]
+            ),
+            ApiResponse(
+                responseCode = "500",
+                description = "Server error during key generation",
+                content = [Content(
+                    mediaType = "application/json",
+                    examples = [ExampleObject(
+                        name = "Error Response",
+                        value = """{
+                            "success": false,
+                            "error": "Key generation failed. Please try again later."
+                        }"""
+                    )]
+                )]
+            )
+        ]
     )
     fun generateKeys(
-        @AuthenticationPrincipal userId: UUID,
-        @RequestParam(required = false) password: String?
+        @AuthenticationPrincipal
+        @Parameter(description = "User ID from JWT token", hidden = true)
+        userId: UUID,
+        @RequestParam(required = false)
+        @Parameter(
+            description = "User password for encrypting private keys (optional, uses default if not provided)",
+            example = "MySecurePassword123!"
+        )
+        password: String?
     ): ResponseEntity<ApiResponse<KeyStatusResponse>> {
         return try {
             logger.info("키 생성 요청: 사용자 $userId")
@@ -119,12 +204,76 @@ class KeyExchangeController(
     @GetMapping("/keys/{userId}")
     @Operation(
         summary = "Get user's public key bundle",
-        description = "Retrieves the public key bundle for initiating a secure session with the specified user. " +
-                "One-time pre-key is marked as used after retrieval."
+        description = """
+            Retrieves the public key bundle for initiating a secure session with the specified user.
+            
+            **Key Exchange Flow (X3DH):**
+            1. Alice calls this endpoint to get Bob's pre-key bundle
+            2. Server returns Bob's identity key, signed pre-key, and one-time pre-key
+            3. One-time pre-key is marked as used (single-use security)
+            4. Alice uses this bundle to establish an encrypted session
+            
+            **Security:**
+            - Only public keys are returned (no private keys)
+            - One-time pre-key is consumed after retrieval
+            - Keys are validated for expiration before return
+            
+            **Rate Limit:** 10 requests per minute per user
+        """.trimIndent()
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Pre-key bundle retrieved successfully",
+                content = [Content(
+                    mediaType = "application/json",
+                    examples = [ExampleObject(
+                        name = "Success Response",
+                        value = """{
+                            "success": true,
+                            "data": {
+                                "userId": "123e4567-e89b-12d3-a456-426614174000",
+                                "deviceId": 1,
+                                "registrationId": 12345,
+                                "identityKey": "base64_encoded_identity_key",
+                                "signedPreKey": {
+                                    "keyId": 1,
+                                    "publicKey": "base64_encoded_signed_pre_key",
+                                    "signature": "base64_encoded_signature"
+                                },
+                                "oneTimePreKey": {
+                                    "keyId": 1,
+                                    "publicKey": "base64_encoded_one_time_pre_key"
+                                }
+                            }
+                        }"""
+                    )]
+                )]
+            ),
+            ApiResponse(
+                responseCode = "404",
+                description = "User keys not found",
+                content = [Content(
+                    mediaType = "application/json",
+                    examples = [ExampleObject(
+                        name = "Error Response",
+                        value = """{
+                            "success": false,
+                            "error": "User keys not found. User may not have registered keys yet."
+                        }"""
+                    )]
+                )]
+            )
+        ]
     )
     fun getPublicKeyBundle(
-        @PathVariable userId: UUID,
-        @AuthenticationPrincipal currentUserId: UUID
+        @PathVariable
+        @Parameter(description = "Target user ID whose keys to retrieve", example = "123e4567-e89b-12d3-a456-426614174000")
+        userId: UUID,
+        @AuthenticationPrincipal
+        @Parameter(description = "Current user ID from JWT token", hidden = true)
+        currentUserId: UUID
     ): ResponseEntity<ApiResponse<PreKeyBundleDto>> {
         return try {
             logger.debug("공개키 번들 조회: $currentUserId -> $userId")
