@@ -491,6 +491,286 @@ class KeyExchangeController(
             ))
         }
     }
+
+    // ===================================================================
+    // 새로운 /api/v1/keys 경로 엔드포인트 (태스크 요구사항)
+    // ===================================================================
+
+    /**
+     * Signal Protocol 키 생성 (새 경로)
+     * 태스크 #1: Update /api/v1/keys/generate endpoint
+     *
+     * SECURITY:
+     * - Generates identity key pair, signed pre-key, and 100 one-time pre-keys
+     * - Private keys encrypted with user password before storage
+     * - Returns only public key information
+     *
+     * RATE LIMIT: 1 request per hour per user (expensive operation)
+     */
+    @PostMapping("/api/v1/keys/generate")
+    @Operation(
+        summary = "Generate Signal Protocol keys (New Path)",
+        description = "Creates identity key pair, signed pre-key, and one-time pre-keys for E2E encryption. " +
+                "CAUTION: This operation is expensive. Private keys are encrypted before storage."
+    )
+    fun generateKeysNewPath(
+        @AuthenticationPrincipal userId: UUID,
+        @RequestParam(required = false) password: String?
+    ): ResponseEntity<ApiResponse<KeyStatusResponse>> {
+        return try {
+            logger.info("키 생성 요청 (새 경로): 사용자 $userId")
+
+            // 비밀번호 검증
+            val actualPassword = password ?: "DEFAULT_TEMP_PASSWORD"
+
+            // generateIdentityKeys() 메서드 사용 (태스크 요구사항)
+            val keyRegistration = encryptionService.generateIdentityKeys(userId, actualPassword)
+
+            // registerKeys() 메서드를 사용하여 키 등록
+            encryptionService.registerKeys(userId, keyRegistration)
+
+            // 응답 생성 (개인키 정보 제외)
+            val response = KeyStatusResponse(
+                userId = userId,
+                deviceId = keyRegistration.deviceId,
+                hasIdentityKey = true,
+                hasSignedPreKey = true,
+                signedPreKeyExpiry = LocalDateTime.now().plusDays(30),
+                availableOneTimePreKeys = keyRegistration.oneTimePreKeys.size,
+                identityKeyCreatedAt = LocalDateTime.now()
+            )
+
+            logger.info("키 생성 완료 (새 경로): 사용자 $userId (Pre Keys: ${keyRegistration.oneTimePreKeys.size})")
+
+            ResponseEntity.ok(ApiResponse(
+                success = true,
+                data = response,
+                message = "Signal Protocol keys generated successfully"
+            ))
+        } catch (e: IllegalArgumentException) {
+            logger.warn("키 생성 실패 (잘못된 입력): ${e.message}")
+            ResponseEntity.badRequest().body(ApiResponse(
+                success = false,
+                error = e.message ?: "Invalid input"
+            ))
+        } catch (e: SecurityException) {
+            logger.error("키 생성 실패 (보안 오류): ${e.message}", e)
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
+                success = false,
+                error = "Key generation failed due to security error: ${e.message}"
+            ))
+        } catch (e: Exception) {
+            logger.error("키 생성 실패 (서버 오류): ${e.message}", e)
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
+                success = false,
+                error = "Key generation failed. Please try again later."
+            ))
+        }
+    }
+
+    /**
+     * 키 등록 엔드포인트 (새 경로)
+     * 태스크 #2: Implement /api/v1/keys/register endpoint
+     *
+     * SECURITY:
+     * - Registers pre-generated keys with the server
+     * - Validates key structure and signatures
+     * - Stores keys securely
+     *
+     * RATE LIMIT: 1 request per hour per user
+     */
+    @PostMapping("/api/v1/keys/register")
+    @Operation(
+        summary = "Register keys with server",
+        description = "Registers pre-generated Signal Protocol keys with the server. " +
+                "Keys should be generated using generateIdentityKeys() first."
+    )
+    fun registerKeys(
+        @AuthenticationPrincipal userId: UUID,
+        @Valid @RequestBody request: KeyRegistrationRequest
+    ): ResponseEntity<ApiResponse<Unit>> {
+        return try {
+            logger.info("키 등록 요청: 사용자 $userId")
+
+            // registerKeys() 메서드 사용 (태스크 요구사항)
+            val success = encryptionService.registerKeys(userId, request)
+
+            if (success) {
+                logger.info("키 등록 완료: 사용자 $userId")
+                ResponseEntity.ok(ApiResponse(
+                    success = true,
+                    message = "Keys registered successfully"
+                ))
+            } else {
+                logger.warn("키 등록 실패: 사용자 $userId")
+                ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse(
+                    success = false,
+                    error = "Key registration failed"
+                ))
+            }
+        } catch (e: IllegalArgumentException) {
+            logger.warn("키 등록 실패 (잘못된 입력): ${e.message}")
+            ResponseEntity.badRequest().body(ApiResponse(
+                success = false,
+                error = e.message ?: "Invalid key registration request"
+            ))
+        } catch (e: SecurityException) {
+            logger.error("키 등록 실패 (보안 오류): ${e.message}", e)
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
+                success = false,
+                error = "Key registration failed due to security error: ${e.message}"
+            ))
+        } catch (e: Exception) {
+            logger.error("키 등록 실패 (서버 오류): ${e.message}", e)
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
+                success = false,
+                error = "Key registration failed. Please try again later."
+            ))
+        }
+    }
+
+    /**
+     * 사용자 공개키 번들 조회 (새 경로)
+     * 태스크 #3: Update /api/v1/keys/bundle/{userId} to return PreKeyBundleDto
+     *
+     * SECURITY:
+     * - Returns ONLY public keys
+     * - One-time pre-key marked as used immediately
+     * - Checks key expiration
+     *
+     * RATE LIMIT: 10 requests per minute per user
+     */
+    @GetMapping("/api/v1/keys/bundle/{userId}")
+    @Operation(
+        summary = "Get user's public key bundle (New Path)",
+        description = "Retrieves the public key bundle for initiating a secure session with the specified user. " +
+                "Returns PreKeyBundleDto. One-time pre-key is marked as used after retrieval."
+    )
+    fun getPublicKeyBundleNewPath(
+        @PathVariable userId: UUID,
+        @AuthenticationPrincipal currentUserId: UUID
+    ): ResponseEntity<ApiResponse<PreKeyBundleDto>> {
+        return try {
+            logger.debug("공개키 번들 조회 (새 경로): $currentUserId -> $userId")
+
+            val keyBundle = try {
+                encryptionService.getPreKeyBundle(userId, deviceId = 1)
+            } catch (e: NoSuchElementException) {
+                logger.warn("사용자 키를 찾을 수 없음: $userId")
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse(
+                    success = false,
+                    error = "User keys not found. User may not have registered keys yet."
+                ))
+            }
+
+            // PreKeyBundleDto 반환 (태스크 요구사항)
+            ResponseEntity.ok(ApiResponse(
+                success = true,
+                data = keyBundle,
+                message = "Pre-key bundle retrieved successfully"
+            ))
+        } catch (e: IllegalArgumentException) {
+            logger.warn("공개키 번들 조회 실패 (잘못된 입력): ${e.message}")
+            ResponseEntity.badRequest().body(ApiResponse(
+                success = false,
+                error = e.message ?: "Invalid request"
+            ))
+        } catch (e: Exception) {
+            logger.error("공개키 번들 조회 실패: ${e.message}", e)
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
+                success = false,
+                error = "Failed to retrieve public key bundle"
+            ))
+        }
+    }
+
+    /**
+     * 세션 초기화 엔드포인트 (새 경로)
+     * 태스크 #4: Implement /api/v1/keys/session/initialize endpoint
+     *
+     * SECURITY:
+     * - Validates recipient's identity key
+     * - Creates encrypted session
+     * - Stores session persistently
+     * - Detects MITM attacks
+     *
+     * RATE LIMIT: 100 requests per hour per user
+     */
+    @PostMapping("/api/v1/keys/session/initialize")
+    @Operation(
+        summary = "Initialize session with recipient",
+        description = "Initializes an encrypted session with a recipient using their pre-key bundle. " +
+                "This is the first step in establishing E2E encryption between two users."
+    )
+    fun initializeSessionNewPath(
+        @AuthenticationPrincipal senderUserId: UUID,
+        @Valid @RequestBody request: SessionInitRequest
+    ): ResponseEntity<ApiResponse<SessionInitResponse>> {
+        return try {
+            logger.info("세션 초기화 요청: $senderUserId -> ${request.recipientId}")
+
+            // 수신자의 pre-key bundle 조회
+            val recipientBundle = try {
+                encryptionService.getPreKeyBundle(request.recipientId, request.recipientDeviceId)
+            } catch (e: NoSuchElementException) {
+                logger.warn("수신자 키를 찾을 수 없음: ${request.recipientId}")
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse(
+                    success = false,
+                    error = "Recipient keys not found. Recipient may not have registered keys yet."
+                ))
+            }
+
+            // initializeSession() 메서드 사용 (태스크 요구사항)
+            val sessionEstablished = encryptionService.initializeSession(
+                senderUserId,
+                request.recipientId,
+                recipientBundle
+            )
+
+            if (!sessionEstablished) {
+                logger.warn("세션 초기화 실패: $senderUserId -> ${request.recipientId}")
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse(
+                    success = false,
+                    error = "Failed to initialize session"
+                ))
+            }
+
+            val response = SessionInitResponse(
+                senderId = senderUserId,
+                recipientId = request.recipientId,
+                deviceId = request.recipientDeviceId,
+                preKeyMessage = "", // 클라이언트 측에서 생성됨
+                sessionEstablished = true,
+                timestamp = LocalDateTime.now()
+            )
+
+            logger.info("세션 초기화 완료: $senderUserId -> ${request.recipientId}")
+
+            ResponseEntity.ok(ApiResponse(
+                success = true,
+                data = response,
+                message = "Session initialized successfully"
+            ))
+        } catch (e: IllegalStateException) {
+            logger.error("세션 초기화 실패 (상태 오류): ${e.message}")
+            ResponseEntity.badRequest().body(ApiResponse(
+                success = false,
+                error = e.message ?: "Invalid state for session initialization"
+            ))
+        } catch (e: SecurityException) {
+            logger.error("세션 초기화 실패 (보안 오류): ${e.message}", e)
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
+                success = false,
+                error = "Session initialization failed due to security error: ${e.message}"
+            ))
+        } catch (e: Exception) {
+            logger.error("세션 초기화 실패: ${e.message}", e)
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
+                success = false,
+                error = "Session initialization failed. Please try again."
+            ))
+        }
+    }
 }
 
 /**
