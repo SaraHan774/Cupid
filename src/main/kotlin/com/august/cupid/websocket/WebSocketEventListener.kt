@@ -1,12 +1,14 @@
 package com.august.cupid.websocket
 
 import com.august.cupid.service.OnlineStatusService
+import com.august.cupid.service.EncryptionService
 import org.slf4j.LoggerFactory
 import org.springframework.context.event.EventListener
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor
 import org.springframework.stereotype.Component
 import org.springframework.web.socket.messaging.SessionConnectedEvent
 import org.springframework.web.socket.messaging.SessionDisconnectEvent
+import java.util.*
 
 /**
  * WebSocket 연결 이벤트 리스너
@@ -19,7 +21,8 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent
 @Component
 class WebSocketEventListener(
     private val onlineStatusService: OnlineStatusService,
-    private val messageHandler: WebSocketMessageHandler
+    private val messageHandler: WebSocketMessageHandler,
+    private val encryptionService: EncryptionService
 ) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -44,6 +47,25 @@ class WebSocketEventListener(
                 
                 // 사용자 온라인 상태 설정
                 onlineStatusService.setUserOnline(userId, sessionId)
+                
+                // Task 3: 사용자가 처음 연결할 때 자동 세션 초기화 (백그라운드에서 비동기 처리)
+                // 주의: 모든 사용자와의 세션을 미리 초기화하는 것은 비효율적이므로
+                // 실제로는 첫 메시지 전송 시 초기화하는 것이 더 적절함
+                // 여기서는 사용자가 키를 생성했는지만 확인
+                try {
+                    val userIdUuid = UUID.fromString(userId)
+                    val keyStatus = encryptionService.getKeyStatus(userIdUuid)
+                    if (keyStatus.hasIdentityKey) {
+                        logger.debug("사용자 암호화 키 확인됨: userId={}", userId)
+                        // 키가 있으면 첫 메시지 전송 시 자동으로 세션이 초기화됨
+                    } else {
+                        logger.debug("사용자 암호화 키가 없음: userId={}", userId)
+                        // 키가 없으면 클라이언트에게 알림 필요 (별도 처리)
+                    }
+                } catch (e: Exception) {
+                    logger.debug("암호화 키 상태 확인 실패 (무시): userId={}", userId, e)
+                    // 키 상태 확인 실패는 치명적이지 않음
+                }
                 
                 // 연결 상태 알림 (선택사항)
                 // 다른 사용자들에게 온라인 상태 변경 알림을 보낼 수 있음

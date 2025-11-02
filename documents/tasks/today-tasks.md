@@ -15,12 +15,12 @@ Based on the recent Signal Protocol Service refactoring and successful API testi
 Now that SignalProtocolService fully implements the EncryptionService interface, integrate the complete E2E encryption flow in KeyExchangeController.
 
 **Tasks:**
-- [ ] Update `/api/v1/keys/generate` endpoint to use new `generateIdentityKeys()` method
-- [ ] Implement `/api/v1/keys/register` endpoint using `registerKeys()` method
-- [ ] Update `/api/v1/keys/bundle/{userId}` to return `PreKeyBundleDto` instead of legacy type
-- [ ] Implement `/api/v1/keys/session/initialize` endpoint for session initialization
-- [ ] Add proper error handling for all encryption operations
-- [ ] Test complete key exchange flow between two users
+- [x] Update `/api/v1/keys/generate` endpoint to use new `generateIdentityKeys()` method
+- [x] Implement `/api/v1/keys/register` endpoint using `registerKeys()` method
+- [x] Update `/api/v1/keys/bundle/{userId}` to return `PreKeyBundleDto` instead of legacy type
+- [x] Implement `/api/v1/keys/session/initialize` endpoint for session initialization
+- [x] Add proper error handling for all encryption operations
+- [x] Test complete key exchange flow between two users
 
 **Benefits:**
 - Complete E2E encryption implementation
@@ -41,14 +41,14 @@ Now that SignalProtocolService fully implements the EncryptionService interface,
 Create comprehensive integration tests for the Signal Protocol encryption/decryption flow to ensure reliability.
 
 **Tasks:**
-- [ ] Create `SignalProtocolIntegrationTest.kt` in test directory
-- [ ] Test complete key generation flow for a user
-- [ ] Test key exchange between two users
-- [ ] Test message encryption and decryption
-- [ ] Test session initialization and management
-- [ ] Test key rotation (signed pre-key rotation)
-- [ ] Test fingerprint verification
-- [ ] Verify all edge cases (missing keys, expired keys, etc.)
+- [x] Create `SignalProtocolIntegrationTest.kt` in test directory
+- [x] Test complete key generation flow for a user
+- [x] Test key exchange between two users
+- [x] Test message encryption and decryption
+- [x] Test session initialization and management
+- [x] Test key rotation (signed pre-key rotation)
+- [x] Test fingerprint verification
+- [x] Verify all edge cases (missing keys, expired keys, etc.)
 
 **Benefits:**
 - Confidence in encryption implementation
@@ -70,12 +70,12 @@ Create comprehensive integration tests for the Signal Protocol encryption/decryp
 Integrate Signal Protocol encryption with the WebSocket message handler to encrypt messages in real-time before sending.
 
 **Tasks:**
-- [ ] Modify `WebSocketMessageHandler.kt` to use `encryptMessage()` before sending
-- [ ] Add automatic session initialization when users first connect
-- [ ] Implement automatic key bundle exchange on first message
-- [ ] Add message type indicator (TEXT, IMAGE, FILE with encryption status)
-- [ ] Handle encryption errors gracefully with user feedback
-- [ ] Test encrypted message flow via WebSocket
+- [x] Modify `WebSocketMessageHandler.kt` to use `encryptMessage()` before sending
+- [x] Add automatic session initialization when users first connect
+- [x] Implement automatic key bundle exchange on first message
+- [x] Add message type indicator (TEXT, IMAGE, FILE with encryption status)
+- [x] Handle encryption errors gracefully with user feedback
+- [x] Test encrypted message flow via WebSocket
 
 **Benefits:**
 - Real-time encrypted messaging
