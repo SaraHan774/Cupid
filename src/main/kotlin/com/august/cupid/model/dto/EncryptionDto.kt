@@ -233,3 +233,69 @@ data class KeyRotationStatus(
     val newPreKeysCount: Int,
     val message: String
 )
+
+/**
+ * Key Backup Request DTO
+ * Used when creating a key backup
+ */
+data class KeyBackupRequest(
+    @field:NotBlank(message = "Backup password is required")
+    @field:Size(min = 12, message = "Backup password must be at least 12 characters")
+    val backupPassword: String,
+
+    @field:Size(max = 365, message = "Expiration days must be between 1 and 365")
+    @field:Min(value = 1, message = "Expiration days must be at least 1")
+    val expirationDays: Int? = 90,
+
+    /**
+     * Optional metadata (JSON string)
+     * 예: {"device_name": "iPhone 13", "app_version": "1.0.0"}
+     */
+    val metadata: String? = null
+)
+
+/**
+ * Key Backup Response DTO
+ * Response after creating a backup
+ */
+data class KeyBackupResponse(
+    val backupId: UUID,
+    val userId: UUID,
+    val createdAt: LocalDateTime,
+    val expiresAt: LocalDateTime?,
+    val message: String
+)
+
+/**
+ * Key Backup Restore Request DTO
+ * Used when restoring keys from a backup
+ */
+data class KeyBackupRestoreRequest(
+    @field:NotNull(message = "Backup ID is required")
+    val backupId: UUID? = null,
+
+    @field:NotBlank(message = "Backup password is required")
+    val backupPassword: String
+)
+
+/**
+ * Key Backup List Response DTO
+ * List of user's backups
+ */
+data class KeyBackupListItem(
+    val backupId: UUID,
+    val createdAt: LocalDateTime,
+    val expiresAt: LocalDateTime?,
+    val isUsed: Boolean,
+    val usedAt: LocalDateTime?,
+    val metadata: String?
+)
+
+/**
+ * Key Backup List Response DTO
+ */
+data class KeyBackupListResponse(
+    val backups: List<KeyBackupListItem>,
+    val totalCount: Int,
+    val activeCount: Int
+)

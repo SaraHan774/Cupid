@@ -172,6 +172,21 @@ enum class AuditEventType {
     /**
      * 지문 검증 이벤트
      */
-    FINGERPRINT_VERIFICATION
+    FINGERPRINT_VERIFICATION,
+    
+    /**
+     * 키 백업 생성 이벤트
+     */
+    KEY_BACKUP,
+    
+    /**
+     * 키 백업 복구 이벤트
+     */
+    KEY_RESTORE,
+    
+    /**
+     * 키 백업 삭제 이벤트
+     */
+    KEY_BACKUP_DELETION
 }
 

@@ -345,6 +345,95 @@ class SecurityAuditLogger(
     }
 
     /**
+     * 키 백업 생성 이벤트 로깅
+     */
+    @Async
+    fun logKeyBackup(
+        userId: UUID,
+        backupId: UUID?,
+        success: Boolean,
+        executionTimeMs: Long? = null,
+        errorMessage: String? = null,
+        metadata: Map<String, Any>? = null
+    ) {
+        try {
+            val logMetadata = mutableMapOf<String, Any>()
+            backupId?.let { logMetadata["backup_id"] = it.toString() }
+            metadata?.let { logMetadata.putAll(it) }
+
+            val log = SecurityAuditLog(
+                userId = userId,
+                eventType = AuditEventType.KEY_BACKUP,
+                success = success,
+                errorMessage = errorMessage,
+                executionTimeMs = executionTimeMs,
+                metadata = logMetadata
+            )
+            securityAuditLogRepository.save(log)
+            logger.debug("키 백업 이벤트 로깅: userId={}, backupId={}, success={}", userId, backupId, success)
+        } catch (e: Exception) {
+            logger.error("키 백업 이벤트 로깅 실패", e)
+        }
+    }
+
+    /**
+     * 키 백업 복구 이벤트 로깅
+     */
+    @Async
+    fun logKeyRestore(
+        userId: UUID,
+        backupId: UUID?,
+        success: Boolean,
+        executionTimeMs: Long? = null,
+        errorMessage: String? = null,
+        metadata: Map<String, Any>? = null
+    ) {
+        try {
+            val logMetadata = mutableMapOf<String, Any>()
+            backupId?.let { logMetadata["backup_id"] = it.toString() }
+            metadata?.let { logMetadata.putAll(it) }
+
+            val log = SecurityAuditLog(
+                userId = userId,
+                eventType = AuditEventType.KEY_RESTORE,
+                success = success,
+                errorMessage = errorMessage,
+                executionTimeMs = executionTimeMs,
+                metadata = logMetadata
+            )
+            securityAuditLogRepository.save(log)
+            logger.debug("키 복구 이벤트 로깅: userId={}, backupId={}, success={}", userId, backupId, success)
+        } catch (e: Exception) {
+            logger.error("키 복구 이벤트 로깅 실패", e)
+        }
+    }
+
+    /**
+     * 키 백업 삭제 이벤트 로깅
+     */
+    @Async
+    fun logKeyBackupDeletion(
+        userId: UUID,
+        backupId: UUID,
+        success: Boolean,
+        errorMessage: String? = null
+    ) {
+        try {
+            val log = SecurityAuditLog(
+                userId = userId,
+                eventType = AuditEventType.KEY_BACKUP_DELETION,
+                success = success,
+                errorMessage = errorMessage,
+                metadata = mapOf("backup_id" to backupId.toString())
+            )
+            securityAuditLogRepository.save(log)
+            logger.debug("키 백업 삭제 이벤트 로깅: userId={}, backupId={}, success={}", userId, backupId, success)
+        } catch (e: Exception) {
+            logger.error("키 백업 삭제 이벤트 로깅 실패", e)
+        }
+    }
+
+    /**
      * 암호화 작업 통계 조회
      */
     @Transactional(readOnly = true)
