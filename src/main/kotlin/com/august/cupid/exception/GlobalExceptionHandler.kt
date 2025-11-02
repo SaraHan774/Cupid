@@ -1,6 +1,7 @@
 package com.august.cupid.exception
 
 import com.august.cupid.model.dto.ApiResponse
+import com.august.cupid.service.EncryptionMetricsService
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -14,9 +15,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
  * - 암호화 관련 예외를 적절한 HTTP 응답으로 변환
  * - 사용자 친화적인 오류 메시지 제공
  * - 일관된 오류 응답 형식 유지
+ * - 에러 메트릭 수집 (Prometheus)
  */
 @RestControllerAdvice
-class GlobalExceptionHandler {
+class GlobalExceptionHandler(
+    private val encryptionMetricsService: EncryptionMetricsService
+) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -26,6 +30,12 @@ class GlobalExceptionHandler {
     @ExceptionHandler(EncryptionException::class)
     fun handleEncryptionException(e: EncryptionException): ResponseEntity<ApiResponse<Nothing>> {
         logger.warn("암호화 예외 발생: ${e.errorCode} - ${e.message}", e.cause)
+        
+        // 에러 메트릭 기록
+        encryptionMetricsService.incrementErrorCount(
+            errorType = "EncryptionException",
+            operation = e.errorCode ?: "unknown"
+        )
         
         return ResponseEntity.status(e.httpStatus).body(ApiResponse(
             success = false,
@@ -40,6 +50,17 @@ class GlobalExceptionHandler {
     @ExceptionHandler(KeyGenerationException::class)
     fun handleKeyGenerationException(e: KeyGenerationException): ResponseEntity<ApiResponse<Nothing>> {
         logger.error("키 생성 예외: userId=${e.userId}, message=${e.message}", e.cause)
+        
+        // 에러 메트릭 기록
+        encryptionMetricsService.incrementErrorCount(
+            errorType = "KeyGenerationException",
+            operation = "generate",
+            tags = if (e.userId != null) {
+                mapOf("user_id" to e.userId.toString())
+            } else {
+                emptyMap()
+            }
+        )
         
         return ResponseEntity.status(e.httpStatus).body(ApiResponse(
             success = false,
@@ -101,6 +122,16 @@ class GlobalExceptionHandler {
     fun handleMessageEncryptionException(e: MessageEncryptionException): ResponseEntity<ApiResponse<Nothing>> {
         logger.error("메시지 암호화 예외: senderId=${e.senderId}, recipientId=${e.recipientId}, message=${e.message}", e.cause)
         
+        // 에러 메트릭 기록
+        encryptionMetricsService.incrementErrorCount(
+            errorType = "MessageEncryptionException",
+            operation = "encrypt",
+            tags = mapOf(
+                "sender_id" to (e.senderId?.toString() ?: "unknown"),
+                "recipient_id" to (e.recipientId?.toString() ?: "unknown")
+            )
+        )
+        
         return ResponseEntity.status(e.httpStatus).body(ApiResponse(
             success = false,
             error = "Failed to encrypt message: ${e.message}",
@@ -114,6 +145,16 @@ class GlobalExceptionHandler {
     @ExceptionHandler(MessageDecryptionException::class)
     fun handleMessageDecryptionException(e: MessageDecryptionException): ResponseEntity<ApiResponse<Nothing>> {
         logger.error("메시지 복호화 예외: senderId=${e.senderId}, recipientId=${e.recipientId}, message=${e.message}", e.cause)
+        
+        // 에러 메트릭 기록
+        encryptionMetricsService.incrementErrorCount(
+            errorType = "MessageDecryptionException",
+            operation = "decrypt",
+            tags = mapOf(
+                "sender_id" to (e.senderId?.toString() ?: "unknown"),
+                "recipient_id" to (e.recipientId?.toString() ?: "unknown")
+            )
+        )
         
         return ResponseEntity.status(e.httpStatus).body(ApiResponse(
             success = false,

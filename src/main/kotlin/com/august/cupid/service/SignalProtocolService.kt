@@ -48,7 +48,8 @@ class SignalProtocolService(
     private val signalSignedPreKeyRepository: SignalSignedPreKeyRepository,
     private val keyEncryptionUtil: KeyEncryptionUtil,
     private val redisTemplate: RedisTemplate<String, String>,
-    private val securityAuditLogger: SecurityAuditLogger
+    private val securityAuditLogger: SecurityAuditLogger,
+    private val encryptionMetricsService: EncryptionMetricsService
 ) : EncryptionService {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -80,9 +81,10 @@ class SignalProtocolService(
      * @throws SecurityException if key generation fails
      */
     override fun generateIdentityKeys(userId: UUID, password: String): KeyRegistrationRequest {
-        val startTime = System.currentTimeMillis()
-        return try {
-            logger.info("사용자 ${userId}의 Signal Protocol 키 생성 시작")
+        val startTime = System.nanoTime()
+        return encryptionMetricsService.recordOperation("generate", mapOf("user_id" to userId.toString())) {
+            try {
+                logger.info("사용자 ${userId}의 Signal Protocol 키 생성 시작")
 
             // 1. 비밀번호 강도 검증
             val passwordValidation = keyEncryptionUtil.validatePasswordStrength(password)
@@ -181,29 +183,41 @@ class SignalProtocolService(
                 }
             )
             
-            // 보안 감사 로깅
-            val executionTime = System.currentTimeMillis() - startTime
-            securityAuditLogger.logKeyGeneration(
-                userId = userId,
-                success = true,
-                executionTimeMs = executionTime,
-                metadata = mapOf(
-                    "pre_keys_count" to preKeys.size,
-                    "registration_id" to registrationId
+                // 보안 감사 로깅
+                val executionTime = (System.nanoTime() - startTime) / 1_000_000
+                securityAuditLogger.logKeyGeneration(
+                    userId = userId,
+                    success = true,
+                    executionTimeMs = executionTime,
+                    metadata = mapOf(
+                        "pre_keys_count" to preKeys.size,
+                        "registration_id" to registrationId
+                    )
                 )
-            )
-            
-            return result
-        } catch (e: Exception) {
-            logger.error("키 생성 실패: ${e.message}", e)
-            val executionTime = System.currentTimeMillis() - startTime
-            securityAuditLogger.logKeyGeneration(
-                userId = userId,
-                success = false,
-                executionTimeMs = executionTime,
-                errorMessage = e.message
-            )
-            throw SecurityException("Signal Protocol 키 생성 중 오류가 발생했습니다", e)
+                
+                // 메트릭 기록
+                encryptionMetricsService.incrementKeyGenerationCount(mapOf("user_id" to userId.toString()))
+                
+                result
+            } catch (e: Exception) {
+                logger.error("키 생성 실패: ${e.message}", e)
+                val executionTime = (System.nanoTime() - startTime) / 1_000_000
+                securityAuditLogger.logKeyGeneration(
+                    userId = userId,
+                    success = false,
+                    executionTimeMs = executionTime,
+                    errorMessage = e.message
+                )
+                
+                // 에러 메트릭 기록
+                encryptionMetricsService.incrementErrorCount(
+                    errorType = e.javaClass.simpleName,
+                    operation = "generate",
+                    tags = mapOf("user_id" to userId.toString())
+                )
+                
+                throw SecurityException("Signal Protocol 키 생성 중 오류가 발생했습니다", e)
+            }
         }
     }
 
@@ -385,9 +399,13 @@ class SignalProtocolService(
         recipientId: UUID,
         preKeyBundle: PreKeyBundleDto
     ): Boolean {
-        val startTime = System.currentTimeMillis()
+        val startTime = System.nanoTime()
         val deviceId = preKeyBundle.deviceId
-        return try {
+        return encryptionMetricsService.recordOperation(
+            "initialize",
+            mapOf("sender_id" to senderId.toString(), "recipient_id" to recipientId.toString())
+        ) {
+            try {
             logger.info("세션 초기화: $senderId -> $recipientId")
 
             // 1. 발신자의 protocol store 생성 (비밀번호 필요 - 현재는 임시)
@@ -437,31 +455,43 @@ class SignalProtocolService(
             // 5. Identity 저장 (MITM 감지용)
             saveIdentity(senderId, recipientAddress, identityKey)
 
-            logger.info("세션 초기화 완료: $senderId -> $recipientId")
-            
-            // 보안 감사 로깅
-            val executionTime = System.currentTimeMillis() - startTime
-            securityAuditLogger.logSessionInitialization(
-                userId = senderId,
-                recipientId = recipientId,
-                success = true,
-                executionTimeMs = executionTime,
-                metadata = mapOf("device_id" to deviceId)
-            )
-            
-            true
-        } catch (e: Exception) {
-            logger.error("세션 초기화 실패: ${e.message}", e)
-            val executionTime = System.currentTimeMillis() - startTime
-            securityAuditLogger.logSessionInitialization(
-                userId = senderId,
-                recipientId = recipientId,
-                success = false,
-                executionTimeMs = executionTime,
-                errorMessage = e.message,
-                metadata = mapOf("device_id" to deviceId)
-            )
-            throw SecurityException("세션 초기화 중 오류가 발생했습니다", e)
+                logger.info("세션 초기화 완료: $senderId -> $recipientId")
+                
+                // 보안 감사 로깅
+                val executionTime = (System.nanoTime() - startTime) / 1_000_000
+                securityAuditLogger.logSessionInitialization(
+                    userId = senderId,
+                    recipientId = recipientId,
+                    success = true,
+                    executionTimeMs = executionTime,
+                    metadata = mapOf("device_id" to deviceId)
+                )
+                
+                true
+            } catch (e: Exception) {
+                logger.error("세션 초기화 실패: ${e.message}", e)
+                val executionTime = (System.nanoTime() - startTime) / 1_000_000
+                securityAuditLogger.logSessionInitialization(
+                    userId = senderId,
+                    recipientId = recipientId,
+                    success = false,
+                    executionTimeMs = executionTime,
+                    errorMessage = e.message,
+                    metadata = mapOf("device_id" to deviceId)
+                )
+                
+                // 에러 메트릭 기록
+                encryptionMetricsService.incrementErrorCount(
+                    errorType = e.javaClass.simpleName,
+                    operation = "initialize",
+                    tags = mapOf(
+                        "sender_id" to senderId.toString(),
+                        "recipient_id" to recipientId.toString()
+                    )
+                )
+                
+                throw SecurityException("세션 초기화 중 오류가 발생했습니다", e)
+            }
         }
     }
 
@@ -488,8 +518,12 @@ class SignalProtocolService(
         plaintext: String,
         deviceId: Int
     ): EncryptedMessageDto {
-        val startTime = System.currentTimeMillis()
-        return try {
+        val startTime = System.nanoTime()
+        return encryptionMetricsService.recordOperation(
+            "encrypt",
+            mapOf("sender_id" to senderId.toString(), "recipient_id" to recipientId.toString())
+        ) {
+            try {
             val senderStore = createProtocolStore(senderId, "DEFAULT_TEMP_PASSWORD")
             val recipientAddress = SignalProtocolAddress(recipientId.toString(), deviceId)
 
@@ -503,56 +537,84 @@ class SignalProtocolService(
             // 세션 상태 업데이트
             saveSession(senderId, recipientAddress, senderStore.loadSession(recipientAddress))
 
-            logger.debug("메시지 암호화 완료: $senderId -> $recipientId")
+                logger.debug("메시지 암호화 완료: $senderId -> $recipientId")
 
-            // EncryptedMessageDto 반환
-            val result = EncryptedMessageDto(
-                senderId = senderId,
-                recipientId = recipientId,
-                deviceId = deviceId,
-                encryptedContent = Base64.getEncoder().encodeToString(ciphertext.serialize()),
-                messageType = ciphertext.type,
-                registrationId = senderStore.localRegistrationId
-            )
-            
-            // 보안 감사 로깅
-            val executionTime = System.currentTimeMillis() - startTime
-            securityAuditLogger.logMessageEncryption(
-                senderId = senderId,
-                recipientId = recipientId,
-                success = true,
-                executionTimeMs = executionTime,
-                metadata = mapOf(
-                    "device_id" to deviceId,
-                    "message_type" to ciphertext.type.toString()
+                // EncryptedMessageDto 반환
+                val result = EncryptedMessageDto(
+                    senderId = senderId,
+                    recipientId = recipientId,
+                    deviceId = deviceId,
+                    encryptedContent = Base64.getEncoder().encodeToString(ciphertext.serialize()),
+                    messageType = ciphertext.type,
+                    registrationId = senderStore.localRegistrationId
                 )
-            )
-            
-            return result
-        } catch (e: IllegalStateException) {
-            logger.error("메시지 암호화 실패: ${e.message}", e)
-            val executionTime = System.currentTimeMillis() - startTime
-            securityAuditLogger.logMessageEncryption(
-                senderId = senderId,
-                recipientId = recipientId,
-                success = false,
-                executionTimeMs = executionTime,
-                errorMessage = e.message,
-                metadata = mapOf("device_id" to deviceId)
-            )
-            throw e
-        } catch (e: Exception) {
-            logger.error("메시지 암호화 실패: ${e.message}", e)
-            val executionTime = System.currentTimeMillis() - startTime
-            securityAuditLogger.logMessageEncryption(
-                senderId = senderId,
-                recipientId = recipientId,
-                success = false,
-                executionTimeMs = executionTime,
-                errorMessage = e.message,
-                metadata = mapOf("device_id" to deviceId)
-            )
-            throw SecurityException("메시지 암호화 중 오류가 발생했습니다", e)
+                
+                // 보안 감사 로깅
+                val executionTime = (System.nanoTime() - startTime) / 1_000_000
+                securityAuditLogger.logMessageEncryption(
+                    senderId = senderId,
+                    recipientId = recipientId,
+                    success = true,
+                    executionTimeMs = executionTime,
+                    metadata = mapOf(
+                        "device_id" to deviceId,
+                        "message_type" to ciphertext.type.toString()
+                    )
+                )
+                
+                // 메트릭 기록
+                encryptionMetricsService.incrementEncryptionCount(
+                    mapOf("sender_id" to senderId.toString(), "recipient_id" to recipientId.toString())
+                )
+                
+                result
+            } catch (e: IllegalStateException) {
+                logger.error("메시지 암호화 실패: ${e.message}", e)
+                val executionTime = (System.nanoTime() - startTime) / 1_000_000
+                securityAuditLogger.logMessageEncryption(
+                    senderId = senderId,
+                    recipientId = recipientId,
+                    success = false,
+                    executionTimeMs = executionTime,
+                    errorMessage = e.message,
+                    metadata = mapOf("device_id" to deviceId)
+                )
+                
+                // 에러 메트릭 기록
+                encryptionMetricsService.incrementErrorCount(
+                    errorType = e.javaClass.simpleName,
+                    operation = "encrypt",
+                    tags = mapOf(
+                        "sender_id" to senderId.toString(),
+                        "recipient_id" to recipientId.toString()
+                    )
+                )
+                
+                throw e
+            } catch (e: Exception) {
+                logger.error("메시지 암호화 실패: ${e.message}", e)
+                val executionTime = (System.nanoTime() - startTime) / 1_000_000
+                securityAuditLogger.logMessageEncryption(
+                    senderId = senderId,
+                    recipientId = recipientId,
+                    success = false,
+                    executionTimeMs = executionTime,
+                    errorMessage = e.message,
+                    metadata = mapOf("device_id" to deviceId)
+                )
+                
+                // 에러 메트릭 기록
+                encryptionMetricsService.incrementErrorCount(
+                    errorType = e.javaClass.simpleName,
+                    operation = "encrypt",
+                    tags = mapOf(
+                        "sender_id" to senderId.toString(),
+                        "recipient_id" to recipientId.toString()
+                    )
+                )
+                
+                throw SecurityException("메시지 암호화 중 오류가 발생했습니다", e)
+            }
         }
     }
 
@@ -577,8 +639,15 @@ class SignalProtocolService(
         encryptedMessage: EncryptedMessageDto,
         password: String
     ): String {
-        val startTime = System.currentTimeMillis()
-        return try {
+        val startTime = System.nanoTime()
+        return encryptionMetricsService.recordOperation(
+            "decrypt",
+            mapOf(
+                "recipient_id" to recipientId.toString(),
+                "sender_id" to encryptedMessage.senderId.toString()
+            )
+        ) {
+            try {
             val recipientStore = createProtocolStore(recipientId, password)
             val senderAddress = SignalProtocolAddress(
                 encryptedMessage.senderId.toString(),
@@ -604,45 +673,75 @@ class SignalProtocolService(
             // 세션 상태 업데이트
             saveSession(recipientId, senderAddress, recipientStore.loadSession(senderAddress))
 
-            logger.debug("메시지 복호화 완료: ${encryptedMessage.senderId} -> $recipientId")
-            
-            val result = String(plaintext)
-            
-            // 보안 감사 로깅
-            val executionTime = System.currentTimeMillis() - startTime
-            securityAuditLogger.logMessageDecryption(
-                recipientId = recipientId,
-                senderId = encryptedMessage.senderId,
-                success = true,
-                executionTimeMs = executionTime,
-                metadata = mapOf("device_id" to encryptedMessage.deviceId)
-            )
-            
-            return result
-        } catch (e: IllegalArgumentException) {
-            logger.error("메시지 복호화 실패: ${e.message}", e)
-            val executionTime = System.currentTimeMillis() - startTime
-            securityAuditLogger.logMessageDecryption(
-                recipientId = recipientId,
-                senderId = encryptedMessage.senderId,
-                success = false,
-                executionTimeMs = executionTime,
-                errorMessage = e.message,
-                metadata = mapOf("device_id" to encryptedMessage.deviceId)
-            )
-            throw e
-        } catch (e: Exception) {
-            logger.error("메시지 복호화 실패: ${e.message}", e)
-            val executionTime = System.currentTimeMillis() - startTime
-            securityAuditLogger.logMessageDecryption(
-                recipientId = recipientId,
-                senderId = encryptedMessage.senderId,
-                success = false,
-                executionTimeMs = executionTime,
-                errorMessage = e.message,
-                metadata = mapOf("device_id" to encryptedMessage.deviceId)
-            )
-            throw SecurityException("메시지 복호화 중 오류가 발생했습니다", e)
+                logger.debug("메시지 복호화 완료: ${encryptedMessage.senderId} -> $recipientId")
+                
+                val result = String(plaintext)
+                
+                // 보안 감사 로깅
+                val executionTime = (System.nanoTime() - startTime) / 1_000_000
+                securityAuditLogger.logMessageDecryption(
+                    recipientId = recipientId,
+                    senderId = encryptedMessage.senderId,
+                    success = true,
+                    executionTimeMs = executionTime,
+                    metadata = mapOf("device_id" to encryptedMessage.deviceId)
+                )
+                
+                // 메트릭 기록
+                encryptionMetricsService.incrementDecryptionCount(
+                    mapOf(
+                        "recipient_id" to recipientId.toString(),
+                        "sender_id" to encryptedMessage.senderId.toString()
+                    )
+                )
+                
+                result
+            } catch (e: IllegalArgumentException) {
+                logger.error("메시지 복호화 실패: ${e.message}", e)
+                val executionTime = (System.nanoTime() - startTime) / 1_000_000
+                securityAuditLogger.logMessageDecryption(
+                    recipientId = recipientId,
+                    senderId = encryptedMessage.senderId,
+                    success = false,
+                    executionTimeMs = executionTime,
+                    errorMessage = e.message,
+                    metadata = mapOf("device_id" to encryptedMessage.deviceId)
+                )
+                
+                // 에러 메트릭 기록
+                encryptionMetricsService.incrementErrorCount(
+                    errorType = e.javaClass.simpleName,
+                    operation = "decrypt",
+                    tags = mapOf(
+                        "recipient_id" to recipientId.toString(),
+                        "sender_id" to encryptedMessage.senderId.toString()
+                    )
+                )
+                throw e
+            } catch (e: Exception) {
+                logger.error("메시지 복호화 실패: ${e.message}", e)
+                val executionTime = (System.nanoTime() - startTime) / 1_000_000
+                securityAuditLogger.logMessageDecryption(
+                    recipientId = recipientId,
+                    senderId = encryptedMessage.senderId,
+                    success = false,
+                    executionTimeMs = executionTime,
+                    errorMessage = e.message,
+                    metadata = mapOf("device_id" to encryptedMessage.deviceId)
+                )
+                
+                // 에러 메트릭 기록
+                encryptionMetricsService.incrementErrorCount(
+                    errorType = e.javaClass.simpleName,
+                    operation = "decrypt",
+                    tags = mapOf(
+                        "recipient_id" to recipientId.toString(),
+                        "sender_id" to encryptedMessage.senderId.toString()
+                    )
+                )
+                
+                throw SecurityException("메시지 복호화 중 오류가 발생했습니다", e)
+            }
         }
     }
 

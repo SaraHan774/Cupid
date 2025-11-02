@@ -107,3 +107,34 @@ springdoc:
     tags-sorter: alpha
     operations-sorter: alpha
   show-actuator: false
+
+# Actuator & Metrics 설정
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+    prometheus:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        encryption.key.generation: true
+        encryption.message.encrypt: true
+        encryption.message.decrypt: true
+        encryption.session.initialize: true
+      percentiles:
+        encryption.key.generation: 0.5, 0.95, 0.99
+        encryption.message.encrypt: 0.5, 0.95, 0.99
+        encryption.message.decrypt: 0.5, 0.95, 0.99
+        encryption.session.initialize: 0.5, 0.95, 0.99
