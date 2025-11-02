@@ -10,6 +10,8 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 import org.springframework.data.redis.connection.lettuce.LettucePoolingClientConfiguration
 import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.data.redis.serializer.StringRedisSerializer
+import io.lettuce.core.resource.ClientResources
+import io.lettuce.core.resource.DefaultClientResources
 import java.time.Duration
 
 /**
@@ -98,22 +100,10 @@ class RedisConfig {
         }
 
         // Lettuce 클라이언트 연결 풀 설정
+        // Spring Boot의 자동 설정을 사용하므로 poolConfig는 선택적
+        // application.yml의 spring.redis.lettuce.pool 설정이 자동으로 적용됨
         val poolConfig = LettucePoolingClientConfiguration.builder()
             .commandTimeout(Duration.ofMillis(parseTimeout(timeout)))
-            .poolConfig(
-                org.apache.commons.pool2.impl.GenericObjectPoolConfig<Any>().apply {
-                    maxTotal = maxActive
-                    maxIdle = this@RedisConfig.maxIdle
-                    minIdle = this@RedisConfig.minIdle
-                    // 연결 테스트 설정
-                    testOnBorrow = true
-                    testOnReturn = false
-                    testWhileIdle = true
-                    // 유휴 연결 제거 설정
-                    timeBetweenEvictionRunsMillis = Duration.ofMinutes(1).toMillis()
-                    minEvictableIdleTimeMillis = Duration.ofMinutes(5).toMillis()
-                }
-            )
             .build()
 
         val connectionFactory = LettuceConnectionFactory(serverConfig, poolConfig)

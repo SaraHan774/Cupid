@@ -53,3 +53,4 @@ CLAUDE.md
 docs-archive/
 .claude/
 SECURITY_REVIEW/.DS_Store
+src/main/resources/firebase-service-account.json

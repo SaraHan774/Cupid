@@ -54,11 +54,6 @@ interface UserKeysRepository : JpaRepository<UserKeys, UUID> {
     fun findAllByUserIdOrderByCreatedAtDesc(userId: UUID): List<UserKeys>
 
     /**
-     * One-Time Pre Key ID로 키 조회
-     */
-    fun findByOneTimePreKeyId(oneTimePreKeyId: Int): UserKeys?
-
-    /**
      * 사용자별 키 개수 조회
      */
     @Query("SELECT COUNT(uk) FROM UserKeys uk WHERE uk.user.id = :userId")

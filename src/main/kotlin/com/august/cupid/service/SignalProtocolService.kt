@@ -1,5 +1,6 @@
 package com.august.cupid.service
 
+import com.august.cupid.model.dto.*
 import com.august.cupid.model.entity.*
 import com.august.cupid.repository.*
 import com.august.cupid.util.KeyEncryptionUtil
@@ -11,7 +12,9 @@ import org.whispersystems.libsignal.*
 import org.whispersystems.libsignal.state.*
 import org.whispersystems.libsignal.protocol.PreKeySignalMessage
 import org.whispersystems.libsignal.protocol.SignalMessage
+import org.whispersystems.libsignal.protocol.CiphertextMessage
 import org.whispersystems.libsignal.util.KeyHelper
+import org.whispersystems.libsignal.ecc.Curve
 import java.time.LocalDateTime
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -61,7 +64,8 @@ class SignalProtocolService(
     }
 
     /**
-     * 사용자의 Signal Protocol 키 생성
+     * Generate and store identity key pair for a user
+     * Implements EncryptionService interface
      *
      * SECURITY:
      * - Identity key pair generated using secure random
@@ -69,20 +73,14 @@ class SignalProtocolService(
      * - Signed pre-key with signature verification
      * - 100 one-time pre-keys for forward secrecy
      *
-     * @param userId 사용자 ID
-     * @param password 키 암호화에 사용할 사용자 비밀번호
-     * @return 생성된 키 정보
+     * @param userId User ID
+     * @param password User password (for deriving encryption key)
+     * @return KeyRegistrationRequest with all generated keys
+     * @throws SecurityException if key generation fails
      */
-    override fun generateKeys(userId: UUID): KeyBundleResult {
-        return generateKeysWithPassword(userId, "DEFAULT_TEMP_PASSWORD")
-    }
-
-    /**
-     * 비밀번호를 사용한 키 생성 (권장)
-     */
-    fun generateKeysWithPassword(userId: UUID, password: String): KeyBundleResult {
+    override fun generateIdentityKeys(userId: UUID, password: String): KeyRegistrationRequest {
         try {
-            logger.info("사용자 $userId의 Signal Protocol 키 생성 시작")
+            logger.info("사용자 ${userId}의 Signal Protocol 키 생성 시작")
 
             // 1. 비밀번호 강도 검증
             val passwordValidation = keyEncryptionUtil.validatePasswordStrength(password)
@@ -96,7 +94,7 @@ class SignalProtocolService(
             }
 
             // 3. 기존 키 삭제 (재생성 시)
-            deleteAllSessions(userId)
+            deleteAllKeys(userId)
 
             // 4. Identity Key Pair 생성
             val identityKeyPair = KeyHelper.generateIdentityKeyPair()
@@ -161,34 +159,83 @@ class SignalProtocolService(
                 signalPreKeyRepository.save(preKeyEntity)
             }
 
-            logger.info("사용자 $userId의 Signal Protocol 키 생성 완료 (Pre Keys: ${preKeys.size})")
+            logger.info("사용자 ${userId}의 Signal Protocol 키 생성 완료 (Pre Keys: ${preKeys.size})")
 
-            // 11. 결과 반환 (private keys는 반환하지 않음)
-            return KeyBundleResult(
-                identityKeyPair = identityKeyPair.publicKey.serialize(), // PUBLIC KEY ONLY
-                signedPreKey = signedPreKeyRecord.serialize(),
-                preKeySignature = signedPreKeyRecord.signature,
-                oneTimePreKeys = preKeys.associate { it.id to it.keyPair.publicKey.serialize() }
+            // 11. KeyRegistrationRequest 반환 (interface 요구사항)
+            return KeyRegistrationRequest(
+                identityPublicKey = Base64.getEncoder().encodeToString(identityKeyPair.publicKey.serialize()),
+                registrationId = registrationId,
+                deviceId = DEFAULT_DEVICE_ID,
+                signedPreKey = SignedPreKeyUploadDto(
+                    keyId = signedPreKeyRecord.id,
+                    publicKey = Base64.getEncoder().encodeToString(signedPreKeyRecord.keyPair.publicKey.serialize()),
+                    signature = Base64.getEncoder().encodeToString(signedPreKeyRecord.signature)
+                ),
+                oneTimePreKeys = preKeys.map { preKeyRecord ->
+                    OneTimePreKeyUploadDto(
+                        keyId = preKeyRecord.id,
+                        publicKey = Base64.getEncoder().encodeToString(preKeyRecord.keyPair.publicKey.serialize())
+                    )
+                }
             )
         } catch (e: Exception) {
             logger.error("키 생성 실패: ${e.message}", e)
-            throw RuntimeException("Signal Protocol 키 생성 중 오류가 발생했습니다", e)
+            throw SecurityException("Signal Protocol 키 생성 중 오류가 발생했습니다", e)
         }
     }
 
     /**
-     * 공개키 번들 조회 (X3DH 키 교환용)
+     * Register user's public keys with the server
+     * Keys are already stored during generateIdentityKeys, so this validates the request
      *
-     * SECURITY:
-     * - Returns only PUBLIC keys
-     * - One-time pre-key marked as used immediately
-     * - Expired keys excluded
+     * @param userId User ID
+     * @param request Key registration request containing all public keys
+     * @return Success status
+     * @throws IllegalArgumentException if keys are invalid
+     * @throws SecurityException if registration fails
      */
-    override fun getPublicKeyBundle(userId: UUID): PublicKeyBundle? {
+    override fun registerKeys(userId: UUID, request: KeyRegistrationRequest): Boolean {
         return try {
+            logger.info("키 등록 검증: 사용자 $userId")
+
+            // 1. 사용자 존재 확인
+            val user = userRepository.findById(userId).orElseThrow {
+                IllegalArgumentException("사용자를 찾을 수 없습니다: $userId")
+            }
+
+            // 2. 등록된 키가 DB에 있는지 확인
+            val userKeys = userKeysRepository.findActiveKeysByUserId(userId, LocalDateTime.now())
+                ?: throw IllegalArgumentException("사용자 키가 존재하지 않습니다")
+
+            // 3. Registration ID 검증
+            if (userKeys.registrationId != request.registrationId) {
+                throw IllegalArgumentException("Registration ID가 일치하지 않습니다")
+            }
+
+            logger.info("키 등록 검증 완료: 사용자 $userId")
+            true
+        } catch (e: IllegalArgumentException) {
+            logger.error("키 등록 검증 실패: ${e.message}", e)
+            throw e
+        } catch (e: Exception) {
+            logger.error("키 등록 중 오류: ${e.message}", e)
+            throw SecurityException("키 등록 중 오류가 발생했습니다", e)
+        }
+    }
+
+    /**
+     * Get pre-key bundle for a user (used by sender to establish session)
+     *
+     * @param userId Target user ID
+     * @param deviceId Target device ID
+     * @return Pre-key bundle containing all public keys
+     * @throws NoSuchElementException if user keys not found
+     */
+    override fun getPreKeyBundle(userId: UUID, deviceId: Int): PreKeyBundleDto {
+        try {
             // 1. User keys 조회
             val userKeys = userKeysRepository.findActiveKeysByUserId(userId, LocalDateTime.now())
-                ?: return null
+                ?: throw NoSuchElementException("사용자 ${userId}의 활성 키를 찾을 수 없습니다")
 
             // 2. 사용 가능한 One-Time Pre Key 조회 (미사용, 미만료)
             val availablePreKey = signalPreKeyRepository.findAvailablePreKey(userId, LocalDateTime.now())
@@ -204,225 +251,383 @@ class SignalProtocolService(
             // 4. Pre-key 부족 시 경고
             val remainingCount = signalPreKeyRepository.countAvailablePreKeys(userId, LocalDateTime.now())
             if (remainingCount < PRE_KEY_MINIMUM_THRESHOLD) {
-                logger.warn("사용자 $userId의 pre-key 부족: $remainingCount 개 남음. 보충 필요!")
+                logger.warn("사용자 ${userId}의 pre-key 부족: $remainingCount 개 남음. 보충 필요!")
             }
 
-            PublicKeyBundle(
+            // 5. Signed Pre-Key 조회
+            val signedPreKey = signalSignedPreKeyRepository.findByUserIdAndIsActiveTrue(userId)
+                ?: throw NoSuchElementException("사용자 ${userId}의 활성 signed pre-key를 찾을 수 없습니다")
+
+            // 6. PreKeyBundleDto 반환
+            return PreKeyBundleDto(
                 userId = userId,
-                identityKey = Base64.getDecoder().decode(userKeys.identityPublicKey),
-                signedPreKey = Base64.getDecoder().decode(userKeys.signedPreKey),
-                preKeySignature = Base64.getDecoder().decode(userKeys.preKeySignature),
-                oneTimePreKey = availablePreKey?.let { Base64.getDecoder().decode(it.publicKey) }
+                deviceId = deviceId,
+                registrationId = userKeys.registrationId,
+                identityKey = userKeys.identityPublicKey,
+                signedPreKey = SignedPreKeyDto(
+                    keyId = signedPreKey.signedPreKeyId,
+                    publicKey = signedPreKey.publicKey,
+                    signature = signedPreKey.signature
+                ),
+                oneTimePreKey = availablePreKey?.let {
+                    OneTimePreKeyDto(
+                        keyId = it.preKeyId,
+                        publicKey = it.publicKey
+                    )
+                }
             )
+        } catch (e: NoSuchElementException) {
+            logger.error("Pre-key bundle 조회 실패: ${e.message}", e)
+            throw e
         } catch (e: Exception) {
-            logger.error("공개키 번들 조회 실패: ${e.message}", e)
-            null
+            logger.error("Pre-key bundle 조회 중 오류: ${e.message}", e)
+            throw SecurityException("Pre-key bundle 조회 중 오류가 발생했습니다", e)
         }
     }
 
     /**
-     * One-Time Pre Key 생성 및 저장
-     */
-    override fun generateOneTimePreKeys(userId: UUID, count: Int): List<Int> {
-        return try {
-            // TODO: Implement with password parameter
-            logger.warn("generateOneTimePreKeys: 비밀번호 파라미터 추가 필요")
-            emptyList()
-        } catch (e: Exception) {
-            logger.error("One-Time Pre Key 생성 실패: ${e.message}", e)
-            emptyList()
-        }
-    }
-
-    /**
-     * X3DH 키 교환 시작 (발신자 측)
+     * Initialize a session with a recipient using their pre-key bundle
+     * Implements EncryptionService interface
      *
      * SECURITY:
      * - Validates recipient's identity key
-     * - Creates session with proper key derivation
+     * - Creates session with proper key derivation via X3DH
      * - Stores session state persistently
+     *
+     * @param senderId Sender user ID
+     * @param recipientId Recipient user ID
+     * @param preKeyBundle Recipient's pre-key bundle
+     * @return Success status
+     * @throws SecurityException if session initialization fails
      */
-    override fun initiateKeyExchange(senderUserId: UUID, recipientUserId: UUID): KeyExchangeResult {
-        try {
-            logger.info("키 교환 시작: $senderUserId -> $recipientUserId")
+    override fun initializeSession(
+        senderId: UUID,
+        recipientId: UUID,
+        preKeyBundle: PreKeyBundleDto
+    ): Boolean {
+        return try {
+            logger.info("세션 초기화: $senderId -> $recipientId")
 
-            // 1. 수신자의 공개키 번들 조회
-            val recipientBundle = getPublicKeyBundle(recipientUserId)
-                ?: throw IllegalStateException("수신자 $recipientUserId의 공개키를 찾을 수 없습니다")
+            // 1. 발신자의 protocol store 생성 (비밀번호 필요 - 현재는 임시)
+            val senderStore = createProtocolStore(senderId, "DEFAULT_TEMP_PASSWORD")
 
-            // 2. 발신자의 protocol store 생성 (비밀번호 필요 - 현재는 임시)
-            val senderStore = createProtocolStore(senderUserId, "DEFAULT_TEMP_PASSWORD")
+            // 2. PreKeyBundle 생성 (DTO를 Signal Protocol PreKeyBundle로 변환)
+            val recipientAddress = SignalProtocolAddress(recipientId.toString(), preKeyBundle.deviceId)
 
-            // 3. PreKeyBundle 생성
-            val recipientAddress = SignalProtocolAddress(recipientUserId.toString(), DEFAULT_DEVICE_ID)
-            val preKeyId = recipientBundle.oneTimePreKey?.let {
-                // Pre-key ID 추출 (실제로는 번들에 포함되어야 함)
-                0 // Placeholder
+            // Identity key 디코딩
+            val identityKeyBytes = Base64.getDecoder().decode(preKeyBundle.identityKey)
+            val identityKey = IdentityKey(identityKeyBytes, 0)
+
+            // Signed pre-key 디코딩
+            val signedPreKeyBytes = Base64.getDecoder().decode(preKeyBundle.signedPreKey.publicKey)
+            val signedPreKeyPublic = Curve.decodePoint(signedPreKeyBytes, 0)
+
+            // Signature 디코딩
+            val signatureBytes = Base64.getDecoder().decode(preKeyBundle.signedPreKey.signature)
+
+            // One-time pre-key 디코딩 (optional)
+            // Signal Protocol PreKeyBundle 생성
+            // Note: PreKeyBundle constructor can accept null for preKeyId and preKey when no one-time key is available
+            val oneTimePreKeyId: Int? = preKeyBundle.oneTimePreKey?.keyId
+            val oneTimePreKeyPublic: org.whispersystems.libsignal.ecc.ECPublicKey? = preKeyBundle.oneTimePreKey?.let {
+                val oneTimePreKeyBytes = Base64.getDecoder().decode(it.publicKey)
+                Curve.decodePoint(oneTimePreKeyBytes, 0)
             }
 
-            val preKeyBundle = PreKeyBundle(
-                senderStore.localRegistrationId,
-                DEFAULT_DEVICE_ID,
-                preKeyId,
-                recipientBundle.oneTimePreKey?.let { ECPublicKey(it) },
-                1, // Signed pre-key ID
-                ECPublicKey(recipientBundle.signedPreKey.copyOfRange(1, recipientBundle.signedPreKey.size)), // Skip version byte
-                recipientBundle.preKeySignature,
-                IdentityKey(recipientBundle.identityKey, 0)
+            val signalPreKeyBundle = PreKeyBundle(
+                preKeyBundle.registrationId,
+                preKeyBundle.deviceId,
+                oneTimePreKeyId ?: -1, // Use -1 if no one-time key available
+                oneTimePreKeyPublic,
+                preKeyBundle.signedPreKey.keyId,
+                signedPreKeyPublic,
+                signatureBytes,
+                identityKey
             )
 
-            // 4. 세션 빌더로 세션 생성
+            // 3. 세션 빌더로 세션 생성
             val sessionBuilder = SessionBuilder(senderStore, recipientAddress)
-            sessionBuilder.process(preKeyBundle)
+            sessionBuilder.process(signalPreKeyBundle)
 
-            // 5. 세션 저장 (PostgreSQL + Redis)
-            saveSession(senderUserId, recipientAddress, senderStore.loadSession(recipientAddress))
+            // 4. 세션 저장 (PostgreSQL + Redis)
+            saveSession(senderId, recipientAddress, senderStore.loadSession(recipientAddress))
 
-            // 6. Identity 저장 (MITM 감지용)
-            saveIdentity(senderUserId, recipientAddress, IdentityKey(recipientBundle.identityKey, 0))
+            // 5. Identity 저장 (MITM 감지용)
+            saveIdentity(senderId, recipientAddress, identityKey)
 
-            // 7. 초기 메시지 암호화 (세션 초기화 확인)
-            val sessionCipher = SessionCipher(senderStore, recipientAddress)
-            val initialMessage = "SESSION_INITIALIZED"
-            val ciphertext = sessionCipher.encrypt(initialMessage.toByteArray())
-
-            logger.info("키 교환 완료: $senderUserId -> $recipientUserId")
-
-            return KeyExchangeResult(
-                sessionKey = ByteArray(0), // Session key는 내부적으로 관리됨
-                preKeyMessage = ciphertext.serialize()
-            )
+            logger.info("세션 초기화 완료: $senderId -> $recipientId")
+            true
         } catch (e: Exception) {
-            logger.error("키 교환 실패: ${e.message}", e)
-            throw RuntimeException("X3DH 키 교환 중 오류가 발생했습니다", e)
+            logger.error("세션 초기화 실패: ${e.message}", e)
+            throw SecurityException("세션 초기화 중 오류가 발생했습니다", e)
         }
     }
 
     /**
-     * X3DH 키 교환 처리 (수신자 측)
+     * Encrypt a message for a recipient
+     * Implements EncryptionService interface
+     *
+     * SECURITY:
+     * - Uses Double Ratchet algorithm for forward secrecy
+     * - Automatically updates session state
+     * - Returns standardized EncryptedMessageDto
+     *
+     * @param senderId Sender user ID
+     * @param recipientId Recipient user ID
+     * @param plaintext Message plaintext
+     * @param deviceId Recipient device ID
+     * @return Encrypted message
+     * @throws IllegalStateException if session doesn't exist
+     * @throws SecurityException if encryption fails
      */
-    override fun processKeyExchange(
-        recipientUserId: UUID,
-        senderUserId: UUID,
-        preKeyMessage: ByteArray
-    ): SessionKeyResult {
-        try {
-            logger.info("키 교환 처리: $senderUserId -> $recipientUserId")
-
-            val recipientStore = createProtocolStore(recipientUserId, "DEFAULT_TEMP_PASSWORD")
-            val senderAddress = SignalProtocolAddress(senderUserId.toString(), DEFAULT_DEVICE_ID)
-
-            val preKeySignalMessage = PreKeySignalMessage(preKeyMessage)
-            val sessionCipher = SessionCipher(recipientStore, senderAddress)
-
-            val decryptedMessage = sessionCipher.decrypt(preKeySignalMessage)
-
-            // 세션 저장
-            saveSession(recipientUserId, senderAddress, recipientStore.loadSession(senderAddress))
-
-            logger.info("키 교환 처리 완료: ${String(decryptedMessage)}")
-
-            return SessionKeyResult(sessionKey = ByteArray(0))
-        } catch (e: Exception) {
-            logger.error("키 교환 처리 실패: ${e.message}", e)
-            throw RuntimeException("X3DH 키 교환 처리 중 오류가 발생했습니다", e)
-        }
-    }
-
-    /**
-     * 메시지 암호화 (Double Ratchet)
-     */
-    override fun encryptMessage(senderUserId: UUID, recipientUserId: UUID, plaintext: String): EncryptedMessage {
+    override fun encryptMessage(
+        senderId: UUID,
+        recipientId: UUID,
+        plaintext: String,
+        deviceId: Int
+    ): EncryptedMessageDto {
         return try {
-            val senderStore = createProtocolStore(senderUserId, "DEFAULT_TEMP_PASSWORD")
-            val recipientAddress = SignalProtocolAddress(recipientUserId.toString(), DEFAULT_DEVICE_ID)
+            val senderStore = createProtocolStore(senderId, "DEFAULT_TEMP_PASSWORD")
+            val recipientAddress = SignalProtocolAddress(recipientId.toString(), deviceId)
 
             if (!senderStore.containsSession(recipientAddress)) {
-                throw IllegalStateException("세션이 존재하지 않습니다. 먼저 키 교환을 수행하세요.")
+                throw IllegalStateException("세션이 존재하지 않습니다. 먼저 세션을 초기화하세요.")
             }
 
             val sessionCipher = SessionCipher(senderStore, recipientAddress)
             val ciphertext = sessionCipher.encrypt(plaintext.toByteArray())
 
             // 세션 상태 업데이트
-            saveSession(senderUserId, recipientAddress, senderStore.loadSession(recipientAddress))
+            saveSession(senderId, recipientAddress, senderStore.loadSession(recipientAddress))
 
-            logger.debug("메시지 암호화 완료: $senderUserId -> $recipientUserId")
+            logger.debug("메시지 암호화 완료: $senderId -> $recipientId")
 
-            EncryptedMessage(
-                ciphertext = ciphertext.serialize(),
-                messageType = ciphertext.type
+            // EncryptedMessageDto 반환
+            EncryptedMessageDto(
+                senderId = senderId,
+                recipientId = recipientId,
+                deviceId = deviceId,
+                encryptedContent = Base64.getEncoder().encodeToString(ciphertext.serialize()),
+                messageType = ciphertext.type,
+                registrationId = senderStore.localRegistrationId
             )
+        } catch (e: IllegalStateException) {
+            logger.error("메시지 암호화 실패: ${e.message}", e)
+            throw e
         } catch (e: Exception) {
             logger.error("메시지 암호화 실패: ${e.message}", e)
-            throw RuntimeException("메시지 암호화 중 오류가 발생했습니다", e)
+            throw SecurityException("메시지 암호화 중 오류가 발생했습니다", e)
         }
     }
 
     /**
-     * 메시지 복호화 (Double Ratchet)
+     * Decrypt a message from a sender
+     * Implements EncryptionService interface
+     *
+     * SECURITY:
+     * - Validates message authenticity
+     * - Automatically updates session state
+     * - Handles both PreKey and normal Signal messages
+     *
+     * @param recipientId Recipient user ID (current user)
+     * @param encryptedMessage Encrypted message from sender
+     * @param password User password (for decrypting private keys)
+     * @return Decrypted plaintext
+     * @throws SecurityException if decryption fails
+     * @throws IllegalArgumentException if message is invalid
      */
     override fun decryptMessage(
-        recipientUserId: UUID,
-        senderUserId: UUID,
-        encryptedMessage: EncryptedMessage
+        recipientId: UUID,
+        encryptedMessage: EncryptedMessageDto,
+        password: String
     ): String {
         return try {
-            val recipientStore = createProtocolStore(recipientUserId, "DEFAULT_TEMP_PASSWORD")
-            val senderAddress = SignalProtocolAddress(senderUserId.toString(), DEFAULT_DEVICE_ID)
+            val recipientStore = createProtocolStore(recipientId, password)
+            val senderAddress = SignalProtocolAddress(
+                encryptedMessage.senderId.toString(),
+                encryptedMessage.deviceId
+            )
             val sessionCipher = SessionCipher(recipientStore, senderAddress)
+
+            // Base64 디코딩
+            val ciphertextBytes = Base64.getDecoder().decode(encryptedMessage.encryptedContent)
 
             val plaintext = when (encryptedMessage.messageType) {
                 CiphertextMessage.PREKEY_TYPE -> {
-                    val preKeyMessage = PreKeySignalMessage(encryptedMessage.ciphertext)
+                    val preKeyMessage = PreKeySignalMessage(ciphertextBytes)
                     sessionCipher.decrypt(preKeyMessage)
                 }
                 CiphertextMessage.WHISPER_TYPE -> {
-                    val signalMessage = SignalMessage(encryptedMessage.ciphertext)
+                    val signalMessage = SignalMessage(ciphertextBytes)
                     sessionCipher.decrypt(signalMessage)
                 }
                 else -> throw IllegalArgumentException("지원하지 않는 메시지 타입: ${encryptedMessage.messageType}")
             }
 
             // 세션 상태 업데이트
-            saveSession(recipientUserId, senderAddress, recipientStore.loadSession(senderAddress))
+            saveSession(recipientId, senderAddress, recipientStore.loadSession(senderAddress))
 
-            logger.debug("메시지 복호화 완료: $senderUserId -> $recipientUserId")
+            logger.debug("메시지 복호화 완료: ${encryptedMessage.senderId} -> $recipientId")
             String(plaintext)
+        } catch (e: IllegalArgumentException) {
+            logger.error("메시지 복호화 실패: ${e.message}", e)
+            throw e
         } catch (e: Exception) {
             logger.error("메시지 복호화 실패: ${e.message}", e)
-            throw RuntimeException("메시지 복호화 중 오류가 발생했습니다", e)
+            throw SecurityException("메시지 복호화 중 오류가 발생했습니다", e)
         }
     }
 
-    override fun initializeSession(userId: UUID, peerId: UUID, sessionKey: ByteArray) {
-        logger.info("세션 초기화: $userId <-> $peerId")
-    }
-
-    override fun hasSession(userId: UUID, peerId: UUID): Boolean {
+    /**
+     * Replenish one-time pre-keys for a user
+     * Implements EncryptionService interface
+     *
+     * @param userId User ID
+     * @param request Key replenishment request
+     * @return Number of keys added
+     */
+    override fun replenishPreKeys(userId: UUID, request: KeyReplenishmentRequest): Int {
         return try {
-            val peerAddress = "${peerId}:$DEFAULT_DEVICE_ID"
-            signalSessionRepository.existsByUserIdAndAddressName(userId, peerId.toString())
+            logger.info("Pre-key 보충: 사용자 $userId, 요청 개수: ${request.oneTimePreKeys.size}")
+
+            // 1. 사용자 존재 확인
+            val user = userRepository.findById(userId).orElseThrow {
+                IllegalArgumentException("사용자를 찾을 수 없습니다: $userId")
+            }
+
+            // 2. 각 pre-key를 DB에 저장 (실제로는 암호화된 private key도 필요하지만, 여기서는 public key만 처리)
+            // TODO: Private keys should be encrypted and stored
+            val savedKeys = request.oneTimePreKeys.map { preKey ->
+                val preKeyEntity = SignalPreKey(
+                    userId = userId,
+                    preKeyId = preKey.keyId,
+                    publicKey = preKey.publicKey,
+                    privateKeyEncrypted = "", // TODO: Need private key
+                    isUsed = false,
+                    expiresAt = LocalDateTime.now().plusDays(90)
+                )
+                signalPreKeyRepository.save(preKeyEntity)
+            }
+
+            logger.info("Pre-key 보충 완료: ${savedKeys.size}개 추가")
+            savedKeys.size
         } catch (e: Exception) {
-            false
+            logger.error("Pre-key 보충 실패: ${e.message}", e)
+            0
         }
     }
 
-    override fun deleteSession(userId: UUID, peerId: UUID) {
-        try {
-            signalSessionRepository.deleteByUserIdAndAddressName(userId, peerId.toString())
+    /**
+     * Rotate signed pre-key for a user
+     * Should be called periodically (weekly/monthly)
+     * Implements EncryptionService interface
+     *
+     * @param userId User ID
+     * @param password User password (for accessing private keys)
+     * @return New signed pre-key ID
+     * @throws SecurityException if rotation fails
+     */
+    override fun rotateSignedPreKey(userId: UUID, password: String): Int {
+        return try {
+            logger.info("Signed pre-key 교체: 사용자 $userId")
 
-            // Redis 캐시 삭제
-            val cacheKey = "$REDIS_SESSION_PREFIX$userId:$peerId:$DEFAULT_DEVICE_ID"
-            redisTemplate.delete(cacheKey)
+            // 1. 사용자 키 조회
+            val userKeys = userKeysRepository.findActiveKeysByUserId(userId, LocalDateTime.now())
+                ?: throw IllegalArgumentException("사용자 키가 존재하지 않습니다")
 
-            logger.info("세션 삭제 완료: $userId <-> $peerId")
+            // 2. Identity private key 복호화
+            val privateKeyBytes = keyEncryptionUtil.decryptPrivateKey(
+                userKeys.identityPrivateKeyEncrypted,
+                password
+            )
+            val publicKeyBytes = Base64.getDecoder().decode(userKeys.identityPublicKey)
+
+            val identityKeyPair = IdentityKeyPair(
+                IdentityKey(publicKeyBytes, 0),
+                Curve.decodePrivatePoint(privateKeyBytes)
+            )
+
+            // 3. 새 signed pre-key 생성
+            val newSignedPreKeyId = signalSignedPreKeyRepository.findMaxSignedPreKeyId(userId) + 1
+            val newSignedPreKeyRecord = KeyHelper.generateSignedPreKey(identityKeyPair, newSignedPreKeyId)
+
+            // 4. Private key 암호화
+            val signedPreKeyPrivateEncrypted = keyEncryptionUtil.encryptPrivateKey(
+                newSignedPreKeyRecord.keyPair.privateKey.serialize(),
+                password
+            )
+
+            // 5. DB에 저장
+            val signedPreKeyEntity = SignalSignedPreKey(
+                userId = userId,
+                signedPreKeyId = newSignedPreKeyRecord.id,
+                publicKey = Base64.getEncoder().encodeToString(newSignedPreKeyRecord.keyPair.publicKey.serialize()),
+                privateKeyEncrypted = signedPreKeyPrivateEncrypted,
+                signature = Base64.getEncoder().encodeToString(newSignedPreKeyRecord.signature),
+                timestamp = newSignedPreKeyRecord.timestamp,
+                expiresAt = LocalDateTime.now().plusDays(30)
+            )
+            signalSignedPreKeyRepository.save(signedPreKeyEntity)
+
+            // 6. UserKeys 업데이트
+            val updatedUserKeys = userKeys.copy(
+                signedPreKey = Base64.getEncoder().encodeToString(newSignedPreKeyRecord.serialize()),
+                preKeySignature = Base64.getEncoder().encodeToString(newSignedPreKeyRecord.signature)
+            )
+            userKeysRepository.save(updatedUserKeys)
+
+            logger.info("Signed pre-key 교체 완료: $newSignedPreKeyId")
+            newSignedPreKeyId
         } catch (e: Exception) {
-            logger.error("세션 삭제 실패: ${e.message}", e)
+            logger.error("Signed pre-key 교체 실패: ${e.message}", e)
+            throw SecurityException("Signed pre-key 교체 중 오류가 발생했습니다", e)
         }
     }
 
-    override fun deleteAllSessions(userId: UUID) {
+    /**
+     * Get key status for a user
+     * Implements EncryptionService interface
+     *
+     * @param userId User ID
+     * @return Key status information
+     */
+    override fun getKeyStatus(userId: UUID): KeyStatusResponse {
+        return try {
+            val userKeys = userKeysRepository.findActiveKeysByUserId(userId, LocalDateTime.now())
+            val signedPreKey = signalSignedPreKeyRepository.findByUserIdAndIsActiveTrue(userId)
+            val availablePreKeys = signalPreKeyRepository.countAvailablePreKeys(userId, LocalDateTime.now())
+
+            KeyStatusResponse(
+                userId = userId,
+                deviceId = DEFAULT_DEVICE_ID,
+                hasIdentityKey = userKeys != null,
+                hasSignedPreKey = signedPreKey != null,
+                signedPreKeyExpiry = signedPreKey?.expiresAt,
+                availableOneTimePreKeys = availablePreKeys.toInt(),
+                identityKeyCreatedAt = userKeys?.createdAt
+            )
+        } catch (e: Exception) {
+            logger.error("키 상태 조회 실패: ${e.message}", e)
+            KeyStatusResponse(
+                userId = userId,
+                deviceId = DEFAULT_DEVICE_ID,
+                hasIdentityKey = false,
+                hasSignedPreKey = false,
+                signedPreKeyExpiry = null,
+                availableOneTimePreKeys = 0,
+                identityKeyCreatedAt = null
+            )
+        }
+    }
+
+    /**
+     * Delete all keys and sessions for a user
+     * Implements EncryptionService interface
+     * SECURITY: Use with caution, this removes all encryption state
+     *
+     * @param userId User ID
+     */
+    override fun deleteAllKeys(userId: UUID) {
         try {
             signalSessionRepository.deleteAllByUserId(userId)
             signalIdentityRepository.deleteAllByUserId(userId)
@@ -430,9 +635,117 @@ class SignalProtocolService(
             signalSignedPreKeyRepository.deleteAllByUserId(userId)
             userKeysRepository.deleteByUserId(userId)
 
-            logger.info("사용자 $userId의 모든 세션 및 키 삭제 완료")
+            logger.info("사용자 ${userId}의 모든 키 및 세션 삭제 완료")
         } catch (e: Exception) {
-            logger.error("모든 세션 삭제 실패: ${e.message}", e)
+            logger.error("모든 키 삭제 실패: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Verify identity key fingerprint
+     * Used to detect MITM attacks
+     * Implements EncryptionService interface
+     *
+     * @param userId User ID checking the fingerprint
+     * @param remoteUserId Remote user ID
+     * @param fingerprintHash Expected fingerprint hash
+     * @return True if fingerprint matches
+     */
+    override fun verifyFingerprint(
+        userId: UUID,
+        remoteUserId: UUID,
+        fingerprintHash: String
+    ): Boolean {
+        return try {
+            val identity = signalIdentityRepository.findByUserIdAndAddressNameAndAddressDeviceId(
+                userId, remoteUserId.toString(), DEFAULT_DEVICE_ID
+            ) ?: return false
+
+            val identityKeyBytes = Base64.getDecoder().decode(identity.identityKey)
+            val actualFingerprint = keyEncryptionUtil.generateFingerprint(identityKeyBytes)
+
+            actualFingerprint == fingerprintHash
+        } catch (e: Exception) {
+            logger.error("지문 검증 실패: ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * Mark identity as trusted after verification
+     * Implements EncryptionService interface
+     *
+     * @param userId User ID doing the verification
+     * @param remoteUserId Remote user ID being verified
+     * @param deviceId Remote device ID
+     * @return Success status
+     */
+    override fun trustIdentity(
+        userId: UUID,
+        remoteUserId: UUID,
+        deviceId: Int
+    ): Boolean {
+        return try {
+            val identity = signalIdentityRepository.findByUserIdAndAddressNameAndAddressDeviceId(
+                userId, remoteUserId.toString(), deviceId
+            ) ?: return false
+
+            val updatedIdentity = identity.copy(trustLevel = TrustLevel.TRUSTED)
+            signalIdentityRepository.save(updatedIdentity)
+
+            logger.info("Identity 신뢰 설정 완료: $userId -> $remoteUserId")
+            true
+        } catch (e: Exception) {
+            logger.error("Identity 신뢰 설정 실패: ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * Check if session exists between two users
+     * Implements EncryptionService interface
+     *
+     * @param userId First user ID
+     * @param remoteUserId Second user ID
+     * @param deviceId Remote device ID
+     * @return True if session exists
+     */
+    override fun hasSession(
+        userId: UUID,
+        remoteUserId: UUID,
+        deviceId: Int
+    ): Boolean {
+        return try {
+            signalSessionRepository.existsByUserIdAndAddressName(userId, remoteUserId.toString())
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Delete session between two users
+     * Forces re-establishment of session
+     * Implements EncryptionService interface
+     *
+     * @param userId User ID
+     * @param remoteUserId Remote user ID
+     * @param deviceId Remote device ID
+     */
+    override fun deleteSession(
+        userId: UUID,
+        remoteUserId: UUID,
+        deviceId: Int
+    ) {
+        try {
+            signalSessionRepository.deleteByUserIdAndAddressName(userId, remoteUserId.toString())
+
+            // Redis 캐시 삭제
+            val cacheKey = "$REDIS_SESSION_PREFIX$userId:$remoteUserId:$deviceId"
+            redisTemplate.delete(cacheKey)
+
+            logger.info("세션 삭제 완료: $userId <-> $remoteUserId")
+        } catch (e: Exception) {
+            logger.error("세션 삭제 실패: ${e.message}", e)
         }
     }
 
@@ -444,7 +757,7 @@ class SignalProtocolService(
     private fun createProtocolStore(userId: UUID, password: String): SignalProtocolStore {
         // Load user keys
         val userKeys = userKeysRepository.findActiveKeysByUserId(userId, LocalDateTime.now())
-            ?: throw IllegalStateException("사용자 $userId의 키가 존재하지 않습니다")
+            ?: throw IllegalStateException("사용자 ${userId}의 키가 존재하지 않습니다")
 
         // Decrypt private key
         val privateKeyBytes = keyEncryptionUtil.decryptPrivateKey(
@@ -518,8 +831,8 @@ class SignalProtocolService(
                 addressName = address.name,
                 addressDeviceId = address.deviceId,
                 identityKey = identityKeyBase64,
-                trustLevel = if (existing != null) existing.trustLevel else SignalIdentity.TrustLevel.UNTRUSTED,
-                firstSeenAt = existing?.firstSeenAt ?: LocalDateTime.now()
+                trustLevel = if (existing != null) existing.trustLevel else com.august.cupid.model.entity.TrustLevel.UNTRUSTED,
+                createdAt = existing?.createdAt ?: LocalDateTime.now()
             )
             signalIdentityRepository.save(identity)
         } catch (e: Exception) {
@@ -564,7 +877,10 @@ class SignalProtocolService(
         override fun storeSession(address: SignalProtocolAddress, record: SessionRecord) {
             sessions[address] = record
         }
-        override fun containsSession(address: SignalProtocolAddress) = sessions[address]?.hasSenderChain() == true
+        override fun containsSession(address: SignalProtocolAddress): Boolean {
+            val session = sessions[address]
+            return session != null && session.sessionState?.hasSenderChain() == true
+        }
         override fun deleteSession(address: SignalProtocolAddress) { sessions.remove(address) }
         override fun deleteAllSessions(name: String) { sessions.keys.removeIf { it.name == name } }
     }

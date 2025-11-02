@@ -264,14 +264,8 @@ class ImageOptimizationService {
                 .size(32, 32)
                 .asBufferedImage()
 
-            // RGB 배열로 변환
-            val width = smallImage.width
-            val height = smallImage.height
-            val pixels = IntArray(width * height)
-            smallImage.getRGB(0, 0, width, height, pixels, 0, width)
-
-            // BlurHash 생성
-            val hash = BlurHash.encode(pixels, width, height, componentX = 4, componentY = 3)
+            // BlurHash 생성 (BufferedImage를 직접 사용)
+            val hash = BlurHash.encode(smallImage, componentX = 4, componentY = 3)
 
             logger.debug("BlurHash 생성 완료: hash={}", hash)
 

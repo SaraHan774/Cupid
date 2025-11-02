@@ -537,7 +537,7 @@ class RealtimeWebSocketController(
         return try {
             val result = channelService.getChannelMembers(channelId)
             if (result.success && result.data != null) {
-                result.data.map { it.userId }
+                result.data!!.map { it.id }
             } else {
                 emptyList()
             }

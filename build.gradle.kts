@@ -59,6 +59,9 @@ dependencies {
 
     // BlurHash (optional - for server-side generation)
     implementation("com.vanniktech:blurhash:0.2.0")
+    
+    // Apache Commons Pool2 for Redis connection pooling
+    implementation("org.apache.commons:commons-pool2:2.12.0")
 
     // API Documentation (SpringDoc OpenAPI)
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.3.0")

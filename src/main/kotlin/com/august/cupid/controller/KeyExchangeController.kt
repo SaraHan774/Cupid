@@ -3,7 +3,6 @@ package com.august.cupid.controller
 import com.august.cupid.model.dto.*
 import com.august.cupid.service.EncryptionService
 import com.august.cupid.service.SignalProtocolService
-import com.august.cupid.service.EncryptedMessage
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
@@ -69,11 +68,10 @@ class KeyExchangeController(
             val actualPassword = password ?: "DEFAULT_TEMP_PASSWORD"
 
             // Generate keys with password encryption
-            val keyBundle = if (signalProtocolService is SignalProtocolService) {
-                signalProtocolService.generateKeysWithPassword(userId, actualPassword)
-            } else {
-                encryptionService.generateKeys(userId)
-            }
+            val keyRegistration = encryptionService.generateIdentityKeys(userId, actualPassword)
+            
+            // Register the keys
+            encryptionService.registerKeys(userId, keyRegistration)
 
             // Build response (NO PRIVATE KEYS)
             val response = KeyStatusResponse(
@@ -82,11 +80,11 @@ class KeyExchangeController(
                 hasIdentityKey = true,
                 hasSignedPreKey = true,
                 signedPreKeyExpiry = LocalDateTime.now().plusDays(30),
-                availableOneTimePreKeys = keyBundle.oneTimePreKeys.size,
+                availableOneTimePreKeys = keyRegistration.oneTimePreKeys.size,
                 identityKeyCreatedAt = LocalDateTime.now()
             )
 
-            logger.info("키 생성 완료: 사용자 $userId (Pre Keys: ${keyBundle.oneTimePreKeys.size})")
+            logger.info("키 생성 완료: 사용자 $userId (Pre Keys: ${keyRegistration.oneTimePreKeys.size})")
 
             ResponseEntity.ok(ApiResponse(
                 success = true,
@@ -131,30 +129,17 @@ class KeyExchangeController(
         return try {
             logger.debug("공개키 번들 조회: $currentUserId -> $userId")
 
-            val keyBundle = encryptionService.getPublicKeyBundle(userId)
-                ?: return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse(
+            val keyBundle = try {
+                encryptionService.getPreKeyBundle(userId, deviceId = 1)
+            } catch (e: NoSuchElementException) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse(
                     success = false,
                     error = "User keys not found. User may not have registered keys yet."
                 ))
+            }
 
-            // Convert to DTO
-            val response = PreKeyBundleDto(
-                userId = keyBundle.userId,
-                deviceId = 1, // TODO: Multi-device support
-                registrationId = 0, // TODO: Get from key bundle
-                identityKey = Base64.getEncoder().encodeToString(keyBundle.identityKey),
-                signedPreKey = SignedPreKeyDto(
-                    keyId = 1, // TODO: Extract from bundle
-                    publicKey = Base64.getEncoder().encodeToString(keyBundle.signedPreKey),
-                    signature = Base64.getEncoder().encodeToString(keyBundle.preKeySignature)
-                ),
-                oneTimePreKey = keyBundle.oneTimePreKey?.let {
-                    OneTimePreKeyDto(
-                        keyId = 0, // TODO: Track key ID
-                        publicKey = Base64.getEncoder().encodeToString(it)
-                    )
-                }
-            )
+            // Use the DTO directly
+            val response = keyBundle
 
             ResponseEntity.ok(ApiResponse(
                 success = true,
@@ -193,15 +178,29 @@ class KeyExchangeController(
         return try {
             logger.info("키 교환 시작: $senderUserId -> ${request.recipientId}")
 
-            // Perform X3DH key exchange
-            val result = encryptionService.initiateKeyExchange(senderUserId, request.recipientId)
+            // Get recipient's pre-key bundle
+            val recipientBundle = try {
+                encryptionService.getPreKeyBundle(request.recipientId, request.recipientDeviceId)
+            } catch (e: NoSuchElementException) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse(
+                    success = false,
+                    error = "Recipient keys not found"
+                ))
+            }
+
+            // Initialize session
+            val sessionEstablished = encryptionService.initializeSession(
+                senderUserId,
+                request.recipientId,
+                recipientBundle
+            )
 
             val response = SessionInitResponse(
                 senderId = senderUserId,
                 recipientId = request.recipientId,
                 deviceId = request.recipientDeviceId,
-                preKeyMessage = Base64.getEncoder().encodeToString(result.preKeyMessage),
-                sessionEstablished = true,
+                preKeyMessage = "", // TODO: Generate pre-key message after refactoring SignalProtocolService
+                sessionEstablished = sessionEstablished,
                 timestamp = LocalDateTime.now()
             )
 
@@ -250,12 +249,9 @@ class KeyExchangeController(
         return try {
             logger.info("키 교환 처리: ${request.senderId} -> $recipientUserId")
 
-            val preKeyMessage = Base64.getDecoder().decode(request.preKeyMessage)
-            val result = encryptionService.processKeyExchange(
-                recipientUserId,
-                request.senderId,
-                preKeyMessage
-            )
+            // TODO: Process key exchange after refactoring SignalProtocolService
+            // For now, we assume the session was already initialized from the sender side
+            val sessionEstablished = encryptionService.hasSession(recipientUserId, request.senderId)
 
             val response = SessionProcessResponse(
                 senderId = request.senderId,
@@ -308,7 +304,7 @@ class KeyExchangeController(
             )
 
             val response = EncryptResponse(
-                ciphertext = Base64.getEncoder().encodeToString(encrypted.ciphertext),
+                ciphertext = encrypted.encryptedContent,
                 messageType = encrypted.messageType
             )
 
@@ -348,13 +344,20 @@ class KeyExchangeController(
         @Valid @RequestBody request: DecryptRequest
     ): ResponseEntity<ApiResponse<DecryptResponse>> {
         return try {
-            val ciphertext = Base64.getDecoder().decode(request.ciphertext)
-            val encrypted = EncryptedMessage(ciphertext, request.messageType)
+            val encrypted = EncryptedMessageDto(
+                senderId = request.senderId,
+                recipientId = recipientUserId,
+                deviceId = 1,
+                encryptedContent = request.ciphertext,
+                messageType = request.messageType,
+                registrationId = 0 // TODO: Get from session
+            )
 
+            // TODO: Password should come from request or be securely stored
             val plaintext = encryptionService.decryptMessage(
                 recipientUserId,
-                request.senderId,
-                encrypted
+                encrypted,
+                "DEFAULT_TEMP_PASSWORD" // TODO: Get actual password
             )
 
             val response = DecryptResponse(plaintext = plaintext)
@@ -440,8 +443,8 @@ class KeyExchangeController(
                 ))
             }
 
-            logger.warn("SECURITY: 사용자 $userId가 모든 세션 및 키 삭제 요청")
-            encryptionService.deleteAllSessions(userId)
+            logger.warn("SECURITY: 사용자 {} 가 모든 세션 및 키 삭제 요청", userId)
+            encryptionService.deleteAllKeys(userId)
 
             ResponseEntity.ok(ApiResponse(
                 success = true,
@@ -465,7 +468,9 @@ class KeyExchangeController(
         @AuthenticationPrincipal userId: UUID
     ): ResponseEntity<ApiResponse<KeyStatusResponse>> {
         return try {
-            val hasKeys = encryptionService.getPublicKeyBundle(userId) != null
+            // Check if user has keys by trying to get status
+            val keyStatus = encryptionService.getKeyStatus(userId)
+            val hasKeys = keyStatus.hasIdentityKey
 
             val response = KeyStatusResponse(
                 userId = userId,

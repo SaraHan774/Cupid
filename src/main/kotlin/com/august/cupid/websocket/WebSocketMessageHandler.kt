@@ -39,12 +39,14 @@ class WebSocketMessageHandler(
 
     /**
      * 하트비트 메시지 처리
+     * NOTE: 현재 RealtimeWebSocketController에서 처리하므로 비활성화됨
      * 클라이언트가 주기적으로 보내는 하트비트를 받아 연결 상태 갱신
-     * 
+     *
      * @param heartbeat 하트비트 메시지
      * @param headerAccessor WebSocket 세션 정보
      */
-    @MessageMapping("/heartbeat")
+    // @MessageMapping("/heartbeat")  // Disabled: handled by RealtimeWebSocketController
+    /*
     fun handleHeartbeat(
         @Payload heartbeat: HeartbeatMessage,
         headerAccessor: SimpMessageHeaderAccessor
@@ -82,6 +84,7 @@ class WebSocketMessageHandler(
             logger.error("하트비트 처리 중 오류 발생", e)
         }
     }
+    */
 
     /**
      * 타이핑 인디케이터 처리

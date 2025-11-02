@@ -42,20 +42,12 @@ interface SignalPreKeyRepository : JpaRepository<SignalPreKey, UUID> {
 
     /**
      * Get one available pre-key (for key bundle)
-     * Alias for findAvailablePreKey (single result)
      */
     @Query("SELECT p FROM SignalPreKey p WHERE p.userId = :userId AND p.isUsed = false AND p.expiresAt > :now ORDER BY p.createdAt ASC LIMIT 1")
-    fun findOneAvailablePreKey(
+    fun findAvailablePreKey(
         @Param("userId") userId: UUID,
         @Param("now") now: LocalDateTime
     ): SignalPreKey?
-
-    /**
-     * Alias method for compatibility
-     */
-    fun findAvailablePreKey(userId: UUID, now: LocalDateTime): SignalPreKey? {
-        return findOneAvailablePreKey(userId, now)
-    }
 
     /**
      * Mark pre-key as used

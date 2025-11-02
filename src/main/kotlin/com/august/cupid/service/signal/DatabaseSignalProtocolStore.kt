@@ -2,8 +2,8 @@ package com.august.cupid.service.signal
 
 import com.august.cupid.model.entity.*
 import com.august.cupid.repository.*
-import org.signal.libsignal.protocol.*
-import org.signal.libsignal.protocol.state.*
+import org.whispersystems.libsignal.*
+import org.whispersystems.libsignal.state.*
 import org.slf4j.LoggerFactory
 import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.stereotype.Component
@@ -224,7 +224,7 @@ class DatabaseSignalProtocolStore(
             )
         } catch (e: Exception) {
             logger.error("Failed to load pre-key $preKeyId", e)
-            throw InvalidKeyIdException("Failed to load pre-key", e)
+            throw InvalidKeyIdException("Failed to load pre-key: ${e.message}")
         }
     }
 
@@ -305,7 +305,7 @@ class DatabaseSignalProtocolStore(
             )
         } catch (e: Exception) {
             logger.error("Failed to load signed pre-key $signedPreKeyId", e)
-            throw InvalidKeyIdException("Failed to load signed pre-key", e)
+            throw InvalidKeyIdException("Failed to load signed pre-key: ${e.message}")
         }
     }
 
@@ -406,14 +406,17 @@ class DatabaseSignalProtocolStore(
         }
     }
 
+    // Note: loadExistingSessions is not part of the standard SignalProtocolStore interface
+    // Removing override annotation and making it a helper method
     @Transactional(readOnly = true)
-    override fun loadExistingSessions(addresses: List<SignalProtocolAddress>): List<SessionRecord> {
+    fun loadExistingSessions(addresses: List<SignalProtocolAddress>): List<SessionRecord> {
         val userId = requireInitialized()
 
         return addresses.mapNotNull { address ->
             try {
                 val session = loadSession(address)
-                if (session.hasCurrentState()) session else null
+                // Check if session has valid state by verifying it has a sender chain
+                if (session.sessionState?.hasSenderChain() == true) session else null
             } catch (e: Exception) {
                 logger.error("Failed to load session for ${address.name}:${address.deviceId}", e)
                 null

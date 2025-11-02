@@ -241,6 +241,25 @@ class KeyEncryptionUtil {
         secureRandom.nextBytes(iv)
         return iv
     }
+
+    /**
+     * Generate fingerprint for identity key verification
+     * Used to detect MITM attacks through out-of-band verification
+     *
+     * @param identityKeyBytes Identity key bytes
+     * @return SHA-256 hash of the identity key in hex format
+     */
+    fun generateFingerprint(identityKeyBytes: ByteArray): String {
+        return try {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            val hashBytes = digest.digest(identityKeyBytes)
+            // Convert to hex string
+            hashBytes.joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            logger.error("지문 생성 실패: ${e.message}", e)
+            throw RuntimeException("지문 생성 중 오류가 발생했습니다", e)
+        }
+    }
 }
 
 /**
