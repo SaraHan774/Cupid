@@ -385,6 +385,8 @@ class SignalProtocolService(
         recipientId: UUID,
         preKeyBundle: PreKeyBundleDto
     ): Boolean {
+        val startTime = System.currentTimeMillis()
+        val deviceId = preKeyBundle.deviceId
         return try {
             logger.info("세션 초기화: $senderId -> $recipientId")
 

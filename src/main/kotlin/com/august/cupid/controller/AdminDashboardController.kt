@@ -83,7 +83,7 @@ class AdminDashboardController(
             // 최근 키 회전 이력
             val recentRotations = keyRotationHistoryRepository.findSuccessfulRotationsSince(now.minusDays(7)).size
             
-            val statistics = mapOf(
+            val statistics: Map<String, Any> = mapOf(
                 "totalUserKeys" to totalUserKeys,
                 "activeUserKeys" to activeUserKeys,
                 "totalPreKeys" to totalPreKeys,
@@ -137,13 +137,13 @@ class AdminDashboardController(
                 // 특정 사용자 상태
                 val keyStatus = encryptionService.getKeyStatus(userId)
                 
-                val status = mapOf(
+                val status: Map<String, Any> = mapOf(
                     "userId" to userId.toString(),
                     "hasIdentityKey" to keyStatus.hasIdentityKey,
                     "hasSignedPreKey" to keyStatus.hasSignedPreKey,
-                    "signedPreKeyExpiry" to keyStatus.signedPreKeyExpiry?.toString(),
+                    "signedPreKeyExpiry" to (keyStatus.signedPreKeyExpiry?.toString() ?: ""),
                     "availableOneTimePreKeys" to keyStatus.availableOneTimePreKeys,
-                    "identityKeyCreatedAt" to keyStatus.identityKeyCreatedAt?.toString(),
+                    "identityKeyCreatedAt" to (keyStatus.identityKeyCreatedAt?.toString() ?: ""),
                     "status" to when {
                         !keyStatus.hasIdentityKey -> "NO_KEYS"
                         keyStatus.availableOneTimePreKeys < 20 -> "LOW_PRE_KEYS"
@@ -222,7 +222,7 @@ class AdminDashboardController(
             val last24Hours = now.minusDays(1)
             
             // 최근 24시간 내 감사 로그 통계
-            val recentLogs = securityAuditLogRepository.findByCreatedAtBetween(last24Hours, now)
+            val recentLogs = securityAuditLogRepository.findByCreatedAtBetween(last24Hours, now, org.springframework.data.domain.PageRequest.of(0, 10000)).content
             
             val encryptionLogs = recentLogs.filter { 
                 it.eventType.name.contains("ENCRYPTION", ignoreCase = true) ||

@@ -83,7 +83,7 @@ class KeyRotationScheduler(
         
         try {
             // 1. 만료 예정인 Signed Pre-Key를 가진 모든 사용자 조회
-            val expiryThreshold = LocalDateTime.now().plusDays(SIGNED_PRE_KEY_ROTATION_DAYS)
+            val expiryThreshold = LocalDateTime.now().plusDays(SIGNED_PRE_KEY_ROTATION_DAYS.toLong())
             val expiringKeys = signalSignedPreKeyRepository.findExpiringSoon(expiryThreshold)
             
             logger.info("회전 대상 Signed Pre-Keys: ${expiringKeys.size}개")
@@ -99,8 +99,8 @@ class KeyRotationScheduler(
                 }
                 processedUsers.add(userId)
                 
+                val executionStartTime = System.currentTimeMillis()
                 try {
-                    val executionStartTime = System.currentTimeMillis()
                     
                     // 3. 이전 키 ID 저장
                     val previousKeyId = signedPreKey.signedPreKeyId
@@ -210,7 +210,7 @@ class KeyRotationScheduler(
                     logger.info("One-Time Pre-Keys 보충 필요: userId={}, currentCount={}, threshold={}",
                         userId, availableCount, PRE_KEY_MINIMUM_THRESHOLD)
                     
-                    val executionStartTime = System.currentTimeMillis()
+                    val executionStartTimePreKeys = System.currentTimeMillis()
                     
                     // 4. 새 One-Time Pre-Keys 생성
                     // SECURITY WARNING: 프로덕션에서는 마스터 키 사용 필요
@@ -236,7 +236,7 @@ class KeyRotationScheduler(
                     // 5. Pre-Keys 보충
                     val keysAdded = encryptionService.replenishPreKeys(userId, replenishmentRequest)
                     
-                    val executionTime = System.currentTimeMillis() - executionStartTime
+                    val executionTime = System.currentTimeMillis() - executionStartTimePreKeys
                     
                     // 6. 보충 이력 저장
                     val history = KeyRotationHistory(
@@ -263,7 +263,8 @@ class KeyRotationScheduler(
                     
                 } catch (e: Exception) {
                     failureCount++
-                    val executionTime = System.currentTimeMillis() - executionStartTime
+                    // executionStartTimePreKeys는 try 블록 내에서만 정의되므로, 여기서는 현재 시간을 사용
+                    val executionTime = 0L
                     
                     logger.error("One-Time Pre-Keys 보충 실패: userId={}", userId, e)
                     

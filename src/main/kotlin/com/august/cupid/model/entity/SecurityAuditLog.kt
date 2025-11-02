@@ -36,8 +36,7 @@ import java.util.*
     ),
     CompoundIndex(
         name = "ttl_idx",
-        def = "{'expires_at': 1}",
-        expireAfterSeconds = 0
+        def = "{'expires_at': 1}"
     )
 )
 data class SecurityAuditLog(
@@ -103,6 +102,8 @@ data class SecurityAuditLog(
 
     /**
      * TTL용 만료 시각 (90일 후)
+     * MongoDB TTL 인덱스는 수동으로 생성해야 함:
+     * db.security_audit_logs.createIndex({ "expires_at": 1 }, { expireAfterSeconds: 0 })
      */
     @Indexed
     @Field("expires_at")

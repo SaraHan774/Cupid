@@ -8,7 +8,7 @@ import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.ExampleObject
 import io.swagger.v3.oas.annotations.media.Schema
-import io.swagger.v3.oas.annotations.responses.ApiResponse
+import io.swagger.v3.oas.annotations.responses.ApiResponse as SwaggerApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
@@ -60,80 +60,48 @@ class KeyExchangeController(
     @PostMapping("/keys/generate")
     @Operation(
         summary = "Generate Signal Protocol keys",
-        description = """
-            Creates identity key pair, signed pre-key, and one-time pre-keys for E2E encryption.
-            
-            **Security Features:**
-            - Generates Curve25519 identity key pair
-            - Creates signed pre-key with 30-day expiry
-            - Generates 100 one-time pre-keys for X3DH protocol
-            - All private keys are encrypted with AES-256-GCM before storage
-            - Returns only public key information
-            
-            **Rate Limit:** 1 request per hour per user (expensive operation)
-            
-            **Example Flow:**
-            1. User calls this endpoint to generate keys
-            2. Server generates and stores encrypted keys
-            3. User receives public key information
-            4. Keys are ready for key exchange with other users
-        """.trimIndent()
+        description = "Creates identity key pair, signed pre-key, and one-time pre-keys for E2E encryption. " +
+                "Security Features: Generates Curve25519 identity key pair, creates signed pre-key with 30-day expiry, " +
+                "generates 100 one-time pre-keys for X3DH protocol. All private keys are encrypted with AES-256-GCM before storage. " +
+                "Returns only public key information. Rate Limit: 1 request per hour per user (expensive operation)."
     )
     @ApiResponses(
-        value = [
-            ApiResponse(
+        value = arrayOf(
+            SwaggerApiResponse(
                 responseCode = "200",
                 description = "Keys generated successfully",
-                content = [Content(
+                content = arrayOf(Content(
                     mediaType = "application/json",
-                    schema = Schema(implementation = ApiResponse::class),
-                    examples = [ExampleObject(
+                    schema = Schema(implementation = KeyStatusResponse::class),
+                    examples = arrayOf(ExampleObject(
                         name = "Success Response",
-                        value = """{
-                            "success": true,
-                            "data": {
-                                "userId": "123e4567-e89b-12d3-a456-426614174000",
-                                "deviceId": 1,
-                                "hasIdentityKey": true,
-                                "hasSignedPreKey": true,
-                                "signedPreKeyExpiry": "2025-12-02T12:00:00",
-                                "availableOneTimePreKeys": 100,
-                                "identityKeyCreatedAt": "2025-11-02T12:00:00"
-                            },
-                            "message": "Signal Protocol keys generated successfully"
-                        }"""
-                    )]
-                )]
+                        value = "{\"success\": true, \"data\": {\"userId\": \"123e4567-e89b-12d3-a456-426614174000\", \"deviceId\": 1, \"hasIdentityKey\": true, \"hasSignedPreKey\": true, \"signedPreKeyExpiry\": \"2025-12-02T12:00:00\", \"availableOneTimePreKeys\": 100, \"identityKeyCreatedAt\": \"2025-11-02T12:00:00\"}, \"message\": \"Signal Protocol keys generated successfully\"}"
+                    ))
+                ))
             ),
-            ApiResponse(
+            SwaggerApiResponse(
                 responseCode = "400",
                 description = "Invalid input or user already has keys",
-                content = [Content(
+                content = arrayOf(Content(
                     mediaType = "application/json",
-                    examples = [ExampleObject(
+                    examples = arrayOf(ExampleObject(
                         name = "Error Response",
-                        value = """{
-                            "success": false,
-                            "error": "User already has active keys"
-                        }"""
-                    )]
-                )]
+                        value = "{\"success\": false, \"error\": \"User already has active keys\"}"
+                    ))
+                ))
             ),
-            ApiResponse(
+            SwaggerApiResponse(
                 responseCode = "500",
                 description = "Server error during key generation",
-                content = [Content(
+                content = arrayOf(Content(
                     mediaType = "application/json",
-                    examples = [ExampleObject(
+                    examples = arrayOf(ExampleObject(
                         name = "Error Response",
-                        value = """{
-                            "success": false,
-                            "error": "Key generation failed. Please try again later."
-                        }"""
-                    )]
-                )]
+                        value = "{\"success\": false, \"error\": \"Key generation failed. Please try again later.\"}"
+                    ))
+                ))
             )
-        ]
+        )
     )
     fun generateKeys(
         @AuthenticationPrincipal
@@ -171,20 +139,20 @@ class KeyExchangeController(
 
             logger.info("키 생성 완료: 사용자 $userId (Pre Keys: ${keyRegistration.oneTimePreKeys.size})")
 
-            ResponseEntity.ok(ApiResponse(
+            ResponseEntity.ok(ApiResponse<KeyStatusResponse>(
                 success = true,
                 data = response,
                 message = "Signal Protocol keys generated successfully"
             ))
         } catch (e: IllegalArgumentException) {
             logger.warn("키 생성 실패 (잘못된 입력): ${e.message}")
-            ResponseEntity.badRequest().body(ApiResponse(
+            ResponseEntity.badRequest().body(ApiResponse<KeyStatusResponse>(
                 success = false,
                 error = e.message ?: "Invalid input"
             ))
         } catch (e: Exception) {
             logger.error("키 생성 실패 (서버 오류): ${e.message}", e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse<KeyStatusResponse>(
                 success = false,
                 error = "Key generation failed. Please try again later."
             ))
@@ -204,68 +172,37 @@ class KeyExchangeController(
     @GetMapping("/keys/{userId}")
     @Operation(
         summary = "Get user's public key bundle",
-        description = """
-            Retrieves the public key bundle for initiating a secure session with the specified user.
-            
-            **Key Exchange Flow (X3DH):**
-            1. Alice calls this endpoint to get Bob's pre-key bundle
-            2. Server returns Bob's identity key, signed pre-key, and one-time pre-key
-            3. One-time pre-key is marked as used (single-use security)
-            4. Alice uses this bundle to establish an encrypted session
-            
-            **Security:**
-            - Only public keys are returned (no private keys)
-            - One-time pre-key is consumed after retrieval
-            - Keys are validated for expiration before return
-            
-            **Rate Limit:** 10 requests per minute per user
-        """.trimIndent()
+        description = "Retrieves the public key bundle for initiating a secure session with the specified user. " +
+                "Key Exchange Flow (X3DH): Alice calls this endpoint to get Bob's pre-key bundle, server returns " +
+                "Bob's identity key, signed pre-key, and one-time pre-key. One-time pre-key is marked as used (single-use security). " +
+                "Security: Only public keys are returned (no private keys), one-time pre-key is consumed after retrieval, " +
+                "keys are validated for expiration before return. Rate Limit: 10 requests per minute per user."
     )
     @ApiResponses(
-        value = [
-            ApiResponse(
+        value = arrayOf(
+            SwaggerApiResponse(
                 responseCode = "200",
                 description = "Pre-key bundle retrieved successfully",
-                content = [Content(
+                content = arrayOf(Content(
                     mediaType = "application/json",
-                    examples = [ExampleObject(
+                    examples = arrayOf(ExampleObject(
                         name = "Success Response",
-                        value = """{
-                            "success": true,
-                            "data": {
-                                "userId": "123e4567-e89b-12d3-a456-426614174000",
-                                "deviceId": 1,
-                                "registrationId": 12345,
-                                "identityKey": "base64_encoded_identity_key",
-                                "signedPreKey": {
-                                    "keyId": 1,
-                                    "publicKey": "base64_encoded_signed_pre_key",
-                                    "signature": "base64_encoded_signature"
-                                },
-                                "oneTimePreKey": {
-                                    "keyId": 1,
-                                    "publicKey": "base64_encoded_one_time_pre_key"
-                                }
-                            }
-                        }"""
-                    )]
-                )]
+                        value = "{\"success\": true, \"data\": {\"userId\": \"123e4567-e89b-12d3-a456-426614174000\", \"deviceId\": 1, \"registrationId\": 12345, \"identityKey\": \"base64_encoded_identity_key\", \"signedPreKey\": {\"keyId\": 1, \"publicKey\": \"base64_encoded_signed_pre_key\", \"signature\": \"base64_encoded_signature\"}, \"oneTimePreKey\": {\"keyId\": 1, \"publicKey\": \"base64_encoded_one_time_pre_key\"}}}"
+                    ))
+                ))
             ),
-            ApiResponse(
+            SwaggerApiResponse(
                 responseCode = "404",
                 description = "User keys not found",
-                content = [Content(
+                content = arrayOf(Content(
                     mediaType = "application/json",
-                    examples = [ExampleObject(
+                    examples = arrayOf(ExampleObject(
                         name = "Error Response",
-                        value = """{
-                            "success": false,
-                            "error": "User keys not found. User may not have registered keys yet."
-                        }"""
-                    )]
-                )]
+                        value = "{\"success\": false, \"error\": \"User keys not found. User may not have registered keys yet.\"}"
+                    ))
+                ))
             )
-        ]
+        )
     )
     fun getPublicKeyBundle(
         @PathVariable
@@ -281,7 +218,7 @@ class KeyExchangeController(
             val keyBundle = try {
                 encryptionService.getPreKeyBundle(userId, deviceId = 1)
             } catch (e: NoSuchElementException) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse(
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse<PreKeyBundleDto>(
                     success = false,
                     error = "User keys not found. User may not have registered keys yet."
                 ))
@@ -290,13 +227,13 @@ class KeyExchangeController(
             // Use the DTO directly
             val response = keyBundle
 
-            ResponseEntity.ok(ApiResponse(
+            ResponseEntity.ok(ApiResponse<PreKeyBundleDto>(
                 success = true,
                 data = response
             ))
         } catch (e: Exception) {
             logger.error("공개키 번들 조회 실패: ${e.message}", e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse<PreKeyBundleDto>(
                 success = false,
                 error = "Failed to retrieve public key bundle"
             ))
@@ -331,7 +268,7 @@ class KeyExchangeController(
             val recipientBundle = try {
                 encryptionService.getPreKeyBundle(request.recipientId, request.recipientDeviceId)
             } catch (e: NoSuchElementException) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse(
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse<SessionInitResponse>(
                     success = false,
                     error = "Recipient keys not found"
                 ))
@@ -355,20 +292,20 @@ class KeyExchangeController(
 
             logger.info("키 교환 완료: $senderUserId -> ${request.recipientId}")
 
-            ResponseEntity.ok(ApiResponse(
+            ResponseEntity.ok(ApiResponse<SessionInitResponse>(
                 success = true,
                 data = response,
                 message = "Session established successfully"
             ))
         } catch (e: IllegalStateException) {
             logger.error("키 교환 실패 (상태 오류): ${e.message}")
-            ResponseEntity.badRequest().body(ApiResponse(
+            ResponseEntity.badRequest().body(ApiResponse<SessionInitResponse>(
                 success = false,
                 error = e.message ?: "Invalid state for key exchange"
             ))
         } catch (e: Exception) {
             logger.error("키 교환 실패: ${e.message}", e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse(
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse<SessionInitResponse>(
                 success = false,
                 error = "Key exchange failed. Please try again."
             ))
@@ -806,7 +743,7 @@ class KeyExchangeController(
                 encryptionService.getPreKeyBundle(userId, deviceId = 1)
             } catch (e: NoSuchElementException) {
                 logger.warn("사용자 키를 찾을 수 없음: $userId")
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse(
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse<PreKeyBundleDto>(
                     success = false,
                     error = "User keys not found. User may not have registered keys yet."
                 ))
