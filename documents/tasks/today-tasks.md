@@ -313,8 +313,6 @@ After completing Task 1 (Rate Limiting)
 ---
 
 ## 📞 Resources
-
-- **Detailed Implementation Guide:** See `NEXT_STEPS.md`
 - **Code Review:** GitHub Issue #1
 - **API Documentation:** http://localhost:8080/swagger-ui.html
 - **Test Results:** All 23 endpoints passing

@@ -75,11 +75,20 @@ class RateLimitFilter(
         }
 
         try {
+            // 암호화 엔드포인트인지 확인하고 적절한 Rate Limit 적용
+            val uri = request.requestURI
+            
             // Rate Limit 키 결정 (IP 또는 User ID)
             val key = getRateLimitKey(request)
             
             // Bucket 조회 또는 생성
-            val bucket = rateLimitService.getBucket(key, request.requestURI)
+            val bucket = if (uri.contains("/encryption") || uri.contains("/keys")) {
+                // 암호화 엔드포인트는 URI 패턴에 따라 적절한 Rate Limit 적용
+                getEncryptionBucket(key, uri, rateLimitService)
+            } else {
+                // 일반 엔드포인트는 기존 방식 사용
+                rateLimitService.getBucket(key, uri)
+            }
             
             // Rate Limit 체크
             val probe = bucket.tryConsumeAndReturnRemaining(1)
@@ -93,16 +102,19 @@ class RateLimitFilter(
                 filterChain.doFilter(request, response)
             } else {
                 // Rate Limit 초과
-                logger.warn("Rate limit exceeded for key: $key, URI: ${request.requestURI}")
+                val retryAfterSeconds = probe.nanosToWaitForRefill / 1_000_000_000
+                
+                logger.warn("Rate limit exceeded for key: $key, URI: ${request.requestURI}, retryAfter=${retryAfterSeconds}s")
                 
                 response.status = 429
+                response.setHeader("Retry-After", retryAfterSeconds.toString())
                 response.contentType = "application/json;charset=UTF-8"
                 response.characterEncoding = "UTF-8"
                 response.writer.write("""
                     {
                         "success": false,
                         "error": "요청 횟수가 초과되었습니다. 잠시 후 다시 시도해주세요.",
-                        "retryAfter": ${probe.nanosToWaitForRefill / 1_000_000_000}
+                        "retryAfter": $retryAfterSeconds
                     }
                 """.trimIndent())
             }
@@ -170,6 +182,58 @@ class RateLimitFilter(
         }
         
         return ipAddress ?: "unknown"
+    }
+    
+    /**
+     * 암호화 엔드포인트의 Rate Limit 버킷 반환
+     * URI 패턴에 따라 적절한 Rate Limit 타입 결정
+     */
+    private fun getEncryptionBucket(
+        key: String,
+        uri: String,
+        rateLimitService: RateLimitService
+    ): io.github.bucket4j.Bucket {
+        return when {
+            uri.contains("/keys/generate") -> {
+                rateLimitService.getEncryptionBucket(
+                    key,
+                    com.august.cupid.security.EncryptionEndpointType.KEY_GENERATION,
+                    uri
+                )
+            }
+            uri.contains("/keys/bundle") || uri.contains("/keys/") -> {
+                rateLimitService.getEncryptionBucket(
+                    key,
+                    com.august.cupid.security.EncryptionEndpointType.KEY_BUNDLE,
+                    uri
+                )
+            }
+            uri.contains("/encrypt") || uri.contains("/decrypt") -> {
+                rateLimitService.getEncryptionBucket(
+                    key,
+                    com.august.cupid.security.EncryptionEndpointType.ENCRYPTION_DECRYPTION,
+                    uri
+                )
+            }
+            uri.contains("/session") -> {
+                rateLimitService.getEncryptionBucket(
+                    key,
+                    com.august.cupid.security.EncryptionEndpointType.SESSION_OPERATIONS,
+                    uri
+                )
+            }
+            uri.contains("/key-exchange") -> {
+                rateLimitService.getEncryptionBucket(
+                    key,
+                    com.august.cupid.security.EncryptionEndpointType.SESSION_OPERATIONS,
+                    uri
+                )
+            }
+            else -> {
+                // 기본 Rate Limit
+                rateLimitService.getBucket(key, uri)
+            }
+        }
     }
 }
 

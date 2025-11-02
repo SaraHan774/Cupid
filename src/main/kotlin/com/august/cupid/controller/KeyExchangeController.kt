@@ -1,6 +1,8 @@
 package com.august.cupid.controller
 
 import com.august.cupid.model.dto.*
+import com.august.cupid.security.RateLimit
+import com.august.cupid.security.RateLimitKeyType
 import com.august.cupid.service.EncryptionService
 import com.august.cupid.service.SignalProtocolService
 import io.swagger.v3.oas.annotations.Operation
@@ -55,9 +57,10 @@ class KeyExchangeController(
      * - Private keys encrypted with user password before storage
      * - Returns only public key information
      *
-     * RATE LIMIT: 1 request per hour per user (expensive operation)
+     * RATE LIMIT: 5 requests per minute per user (expensive operation)
      */
     @PostMapping("/keys/generate")
+    @RateLimit(requests = 5, windowMinutes = 1, keyType = RateLimitKeyType.USER)
     @Operation(
         summary = "Generate Signal Protocol keys",
         description = "Creates identity key pair, signed pre-key, and one-time pre-keys for E2E encryption. " +
@@ -170,6 +173,7 @@ class KeyExchangeController(
      * RATE LIMIT: 10 requests per minute per user
      */
     @GetMapping("/keys/{userId}")
+    @RateLimit(requests = 10, windowMinutes = 1, keyType = RateLimitKeyType.USER)
     @Operation(
         summary = "Get user's public key bundle",
         description = "Retrieves the public key bundle for initiating a secure session with the specified user. " +
@@ -252,6 +256,7 @@ class KeyExchangeController(
      * RATE LIMIT: 100 requests per hour per user
      */
     @PostMapping("/key-exchange/initiate")
+    @RateLimit(requests = 100, windowMinutes = 60, keyType = RateLimitKeyType.USER)
     @Operation(
         summary = "Initiate X3DH key exchange",
         description = "Starts the X3DH key exchange process with a recipient. " +
@@ -323,6 +328,7 @@ class KeyExchangeController(
      * RATE LIMIT: 100 requests per hour per user
      */
     @PostMapping("/key-exchange/process")
+    @RateLimit(requests = 100, windowMinutes = 60, keyType = RateLimitKeyType.USER)
     @Operation(
         summary = "Process X3DH key exchange",
         description = "Processes an incoming X3DH key exchange message from a sender. " +
@@ -371,8 +377,10 @@ class KeyExchangeController(
      * - Post-compromise security
      *
      * NOTE: In production, encryption should happen on client side
+     * RATE LIMIT: 100 requests per minute per user
      */
     @PostMapping("/encrypt")
+    @RateLimit(requests = 100, windowMinutes = 1, keyType = RateLimitKeyType.USER)
     @Operation(
         summary = "Encrypt message (Debug/Test)",
         description = "Encrypts a plaintext message using the Double Ratchet algorithm. " +
@@ -418,8 +426,10 @@ class KeyExchangeController(
      * - Updates ratchet state
      *
      * NOTE: In production, decryption should happen on client side
+     * RATE LIMIT: 100 requests per minute per user
      */
     @PostMapping("/decrypt")
+    @RateLimit(requests = 100, windowMinutes = 1, keyType = RateLimitKeyType.USER)
     @Operation(
         summary = "Decrypt message (Debug/Test)",
         description = "Decrypts an encrypted message using the Double Ratchet algorithm. " +
@@ -460,8 +470,10 @@ class KeyExchangeController(
 
     /**
      * 7. 세션 상태 확인
+     * RATE LIMIT: 100 requests per hour per user
      */
     @GetMapping("/session/{peerId}")
+    @RateLimit(requests = 100, windowMinutes = 60, keyType = RateLimitKeyType.USER)
     @Operation(summary = "Check session status", description = "Checks if an encrypted session exists with the specified peer")
     fun getSessionStatus(
         @AuthenticationPrincipal userId: UUID,
@@ -489,8 +501,10 @@ class KeyExchangeController(
 
     /**
      * 8. 세션 삭제
+     * RATE LIMIT: 100 requests per hour per user
      */
     @DeleteMapping("/session/{peerId}")
+    @RateLimit(requests = 100, windowMinutes = 60, keyType = RateLimitKeyType.USER)
     @Operation(summary = "Delete session", description = "Deletes the encrypted session with the specified peer")
     fun deleteSession(
         @AuthenticationPrincipal userId: UUID,
@@ -547,8 +561,10 @@ class KeyExchangeController(
 
     /**
      * 10. 키 상태 조회
+     * RATE LIMIT: 10 requests per minute per user
      */
     @GetMapping("/keys/status")
+    @RateLimit(requests = 10, windowMinutes = 1, keyType = RateLimitKeyType.USER)
     @Operation(summary = "Get key status", description = "Retrieves the current status of the user's cryptographic keys")
     fun getKeyStatus(
         @AuthenticationPrincipal userId: UUID
@@ -591,9 +607,10 @@ class KeyExchangeController(
      * - Private keys encrypted with user password before storage
      * - Returns only public key information
      *
-     * RATE LIMIT: 1 request per hour per user (expensive operation)
+     * RATE LIMIT: 5 requests per minute per user (expensive operation)
      */
     @PostMapping("/api/v1/keys/generate")
+    @RateLimit(requests = 5, windowMinutes = 1, keyType = RateLimitKeyType.USER)
     @Operation(
         summary = "Generate Signal Protocol keys (New Path)",
         description = "Creates identity key pair, signed pre-key, and one-time pre-keys for E2E encryption. " +
@@ -663,9 +680,10 @@ class KeyExchangeController(
      * - Validates key structure and signatures
      * - Stores keys securely
      *
-     * RATE LIMIT: 1 request per hour per user
+     * RATE LIMIT: 5 requests per minute per user
      */
     @PostMapping("/api/v1/keys/register")
+    @RateLimit(requests = 5, windowMinutes = 1, keyType = RateLimitKeyType.USER)
     @Operation(
         summary = "Register keys with server",
         description = "Registers pre-generated Signal Protocol keys with the server. " +
@@ -727,6 +745,7 @@ class KeyExchangeController(
      * RATE LIMIT: 10 requests per minute per user
      */
     @GetMapping("/api/v1/keys/bundle/{userId}")
+    @RateLimit(requests = 10, windowMinutes = 1, keyType = RateLimitKeyType.USER)
     @Operation(
         summary = "Get user's public key bundle (New Path)",
         description = "Retrieves the public key bundle for initiating a secure session with the specified user. " +
@@ -783,6 +802,7 @@ class KeyExchangeController(
      * RATE LIMIT: 100 requests per hour per user
      */
     @PostMapping("/api/v1/keys/session/initialize")
+    @RateLimit(requests = 100, windowMinutes = 60, keyType = RateLimitKeyType.USER)
     @Operation(
         summary = "Initialize session with recipient",
         description = "Initializes an encrypted session with a recipient using their pre-key bundle. " +

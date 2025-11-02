@@ -64,6 +64,18 @@ class RateLimitService(
         private const val WEBSOCKET_REQUESTS = 5L
         private const val WEBSOCKET_WINDOW_MINUTES = 1L
         
+        // 암호화 엔드포인트 Rate Limit 설정
+        private const val KEY_GENERATION_REQUESTS = 5L
+        private const val KEY_GENERATION_WINDOW_MINUTES = 1L
+        private const val KEY_ROTATION_REQUESTS = 1L
+        private const val KEY_ROTATION_WINDOW_MINUTES = 60L
+        private const val ENCRYPTION_REQUESTS = 100L
+        private const val ENCRYPTION_WINDOW_MINUTES = 1L
+        private const val KEY_BUNDLE_REQUESTS = 10L
+        private const val KEY_BUNDLE_WINDOW_MINUTES = 1L
+        private const val SESSION_OPERATIONS_REQUESTS = 100L
+        private const val SESSION_OPERATIONS_WINDOW_MINUTES = 60L
+        
         // 테스트 환경 Rate Limit 설정 (매우 관대)
         private const val TEST_LOGIN_REQUESTS = 1000L
         private const val TEST_REGISTER_REQUESTS = 1000L
@@ -126,6 +138,67 @@ class RateLimitService(
             .build()
         
         return proxyManager.builder().build(bucketKey, configuration)
+    }
+    
+    /**
+     * 커스텀 Rate Limit으로 버킷 생성
+     * 
+     * @param key Rate Limit 키 (예: "user:123" 또는 "ip:192.168.1.1")
+     * @param requests 허용할 요청 수
+     * @param windowMinutes 시간 윈도우 (분 단위)
+     * @param endpoint 엔드포인트 경로 (로깅 및 디버깅용)
+     */
+    fun getBucket(key: String, requests: Long, windowMinutes: Long, endpoint: String = ""): Bucket {
+        val bucketKey = "rate_limit:$key:$endpoint".toByteArray()
+        
+        val bandwidth = if (isTestProfile) {
+            // 테스트 환경에서는 매우 관대한 제한
+            Bandwidth.classic(
+                1000L,
+                Refill.intervally(1000L, Duration.ofMinutes(1))
+            )
+        } else {
+            Bandwidth.classic(
+                requests,
+                Refill.intervally(requests, Duration.ofMinutes(windowMinutes))
+            )
+        }
+        
+        val configuration = BucketConfiguration.builder()
+            .addLimit(bandwidth)
+            .build()
+        
+        return proxyManager.builder().build(bucketKey, configuration)
+    }
+    
+    /**
+     * 암호화 엔드포인트용 Rate Limit 버킷 생성
+     */
+    fun getEncryptionBucket(key: String, endpointType: EncryptionEndpointType, endpoint: String = ""): Bucket {
+        val (requests, windowMinutes) = when (endpointType) {
+            EncryptionEndpointType.KEY_GENERATION -> {
+                if (isTestProfile) 1000L to 1L
+                else KEY_GENERATION_REQUESTS to KEY_GENERATION_WINDOW_MINUTES
+            }
+            EncryptionEndpointType.KEY_ROTATION -> {
+                if (isTestProfile) 1000L to 1L
+                else KEY_ROTATION_REQUESTS to KEY_ROTATION_WINDOW_MINUTES
+            }
+            EncryptionEndpointType.ENCRYPTION_DECRYPTION -> {
+                if (isTestProfile) 1000L to 1L
+                else ENCRYPTION_REQUESTS to ENCRYPTION_WINDOW_MINUTES
+            }
+            EncryptionEndpointType.KEY_BUNDLE -> {
+                if (isTestProfile) 1000L to 1L
+                else KEY_BUNDLE_REQUESTS to KEY_BUNDLE_WINDOW_MINUTES
+            }
+            EncryptionEndpointType.SESSION_OPERATIONS -> {
+                if (isTestProfile) 1000L to 1L
+                else SESSION_OPERATIONS_REQUESTS to SESSION_OPERATIONS_WINDOW_MINUTES
+            }
+        }
+        
+        return getBucket(key, requests, windowMinutes, endpoint)
     }
 
     /**
@@ -222,5 +295,40 @@ class RateLimitService(
             )
         }
     }
+}
+
+/**
+ * 암호화 엔드포인트 타입
+ */
+enum class EncryptionEndpointType {
+    /**
+     * 키 생성 (가장 비용이 큰 작업)
+     * Rate Limit: 5 per minute
+     */
+    KEY_GENERATION,
+    
+    /**
+     * 키 회전
+     * Rate Limit: 1 per hour
+     */
+    KEY_ROTATION,
+    
+    /**
+     * 암호화/복호화
+     * Rate Limit: 100 per minute
+     */
+    ENCRYPTION_DECRYPTION,
+    
+    /**
+     * 키 번들 조회
+     * Rate Limit: 10 per minute
+     */
+    KEY_BUNDLE,
+    
+    /**
+     * 세션 작업 (초기화, 삭제 등)
+     * Rate Limit: 100 per hour
+     */
+    SESSION_OPERATIONS
 }
 
