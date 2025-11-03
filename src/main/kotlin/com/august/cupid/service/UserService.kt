@@ -1,5 +1,6 @@
 package com.august.cupid.service
 
+import com.august.cupid.auth.dto.UserInfoDto
 import com.august.cupid.model.dto.*
 import com.august.cupid.model.entity.User
 import com.august.cupid.repository.UserRepository
@@ -294,6 +295,65 @@ class UserService(
             logger.error("프로필 이미지 업데이트 실패: ${e.message}", e)
             ApiResponse(false, error = "프로필 이미지 업데이트 중 오류가 발생했습니다")
         }
+    }
+
+    // ==========================================
+    // 외부 모듈용 Read-Only API
+    // Chat, Encryption 등 다른 모듈에서 사용
+    // ==========================================
+
+    /**
+     * User 존재 여부 확인 (경량 쿼리)
+     *
+     * @param userId 확인할 사용자 ID
+     * @return User가 존재하면 true, 아니면 false
+     */
+    @Transactional(readOnly = true)
+    fun existsById(userId: UUID): Boolean {
+        return userRepository.existsById(userId)
+    }
+
+    /**
+     * User 활성 상태 확인
+     *
+     * @param userId 확인할 사용자 ID
+     * @return User가 활성 상태이면 true, 아니면 false
+     */
+    @Transactional(readOnly = true)
+    fun isUserActive(userId: UUID): Boolean {
+        return userRepository.findById(userId)
+            .map { it.isActive }
+            .orElse(false)
+    }
+
+    /**
+     * User 정보 조회 (DTO 반환)
+     * 엔티티 노출 방지 - 다른 모듈에서 User 정보가 필요할 때 사용
+     *
+     * @param userId 조회할 사용자 ID
+     * @return UserInfoDto 또는 null
+     */
+    @Transactional(readOnly = true)
+    fun getUserInfo(userId: UUID): UserInfoDto? {
+        val user = userRepository.findById(userId).orElse(null) ?: return null
+        return UserInfoDto.from(user)
+    }
+
+    /**
+     * 여러 User 정보 일괄 조회
+     * N+1 쿼리 방지 - 한 번의 쿼리로 여러 사용자 정보 조회
+     *
+     * @param userIds 조회할 사용자 ID 목록
+     * @return Map<UUID, UserInfoDto> (Key: userId, Value: UserInfoDto)
+     */
+    @Transactional(readOnly = true)
+    fun getUserInfos(userIds: List<UUID>): Map<UUID, UserInfoDto> {
+        if (userIds.isEmpty()) return emptyMap()
+
+        return userRepository.findAllById(userIds)
+            .associate { user ->
+                user.id!! to UserInfoDto.from(user)
+            }
     }
 
     /**
