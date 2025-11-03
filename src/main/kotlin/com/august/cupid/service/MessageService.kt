@@ -9,7 +9,7 @@ import com.august.cupid.model.entity.EditHistory
 import com.august.cupid.repository.MessageRepository
 import com.august.cupid.repository.MessageReadsRepository
 import com.august.cupid.repository.ChannelMembersRepository
-import com.august.cupid.repository.UserRepository
+import com.august.cupid.service.UserService
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
@@ -28,7 +28,7 @@ class MessageService(
     private val messageRepository: MessageRepository,
     private val messageReadsRepository: MessageReadsRepository,
     private val channelMembersRepository: ChannelMembersRepository,
-    private val userRepository: UserRepository,
+    private val userService: UserService,
     private val messagingTemplate: org.springframework.messaging.simp.SimpMessagingTemplate
 ) {
 
@@ -44,10 +44,14 @@ class MessageService(
                 return ApiResponse(false, message = "채널 ID는 필수입니다")
             }
 
-            // 발신자 존재 확인
-            val sender = userRepository.findById(senderId).orElse(null)
-            if (sender == null) {
+            // 발신자 존재 확인 - UserService 사용
+            if (!userService.existsById(senderId)) {
                 return ApiResponse(false, message = "발신자를 찾을 수 없습니다")
+            }
+
+            // 활성 사용자 여부 확인
+            if (!userService.isUserActive(senderId)) {
+                return ApiResponse(false, message = "비활성화된 사용자입니다")
             }
 
             // 채널 멤버십 확인
