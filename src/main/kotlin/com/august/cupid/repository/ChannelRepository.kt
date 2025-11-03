@@ -41,7 +41,7 @@ interface ChannelRepository : JpaRepository<Channel, UUID> {
     @Query("""
         SELECT c FROM Channel c 
         JOIN ChannelMembers cm ON c.id = cm.channel.id 
-        WHERE cm.user.id = :userId AND cm.isActive = true
+        WHERE cm.userId = :userId AND cm.isActive = true
         ORDER BY c.updatedAt DESC
     """)
     fun findChannelsByUserId(@Param("userId") userId: UUID): List<Channel>
@@ -53,9 +53,9 @@ interface ChannelRepository : JpaRepository<Channel, UUID> {
         SELECT c FROM Channel c 
         JOIN ChannelMembers cm1 ON c.id = cm1.channel.id 
         JOIN ChannelMembers cm2 ON c.id = cm2.channel.id 
-        WHERE c.type = 'DIRECT' 
-        AND cm1.user.id = :user1Id AND cm1.isActive = true
-        AND cm2.user.id = :user2Id AND cm2.isActive = true
+        WHERE c.type = 'DIRECT'
+        AND cm1.userId = :user1Id AND cm1.isActive = true
+        AND cm2.userId = :user2Id AND cm2.isActive = true
     """)
     fun findDirectChannelBetweenUsers(
         @Param("user1Id") user1Id: UUID, 
@@ -95,7 +95,7 @@ interface ChannelRepository : JpaRepository<Channel, UUID> {
     @Query("""
         SELECT COUNT(c) FROM Channel c 
         JOIN ChannelMembers cm ON c.id = cm.channel.id 
-        WHERE cm.user.id = :userId AND cm.isActive = true
+        WHERE cm.userId = :userId AND cm.isActive = true
     """)
     fun countChannelsByUserId(@Param("userId") userId: UUID): Long
 }

@@ -52,7 +52,7 @@ interface ChannelMembersRepository : JpaRepository<ChannelMembers, UUID> {
     /**
      * 사용자가 참여한 활성 채널 수 조회
      */
-    @Query("SELECT COUNT(cm) FROM ChannelMembers cm WHERE cm.user.id = :userId AND cm.isActive = true")
+    @Query("SELECT COUNT(cm) FROM ChannelMembers cm WHERE cm.userId = :userId AND cm.isActive = true")
     fun countActiveChannelsByUserId(@Param("userId") userId: UUID): Long
 
     /**
@@ -64,19 +64,19 @@ interface ChannelMembersRepository : JpaRepository<ChannelMembers, UUID> {
     /**
      * 사용자가 관리자인 채널들 조회
      */
-    @Query("SELECT cm FROM ChannelMembers cm WHERE cm.user.id = :userId AND cm.role = 'ADMIN' AND cm.isActive = true")
+    @Query("SELECT cm FROM ChannelMembers cm WHERE cm.userId = :userId AND cm.role = 'ADMIN' AND cm.isActive = true")
     fun findAdminChannelsByUserId(@Param("userId") userId: UUID): List<ChannelMembers>
 
     /**
      * 마지막 읽음 시간 업데이트
      */
-    @Query("UPDATE ChannelMembers cm SET cm.lastReadAt = :readAt WHERE cm.channel.id = :channelId AND cm.user.id = :userId")
+    @Query("UPDATE ChannelMembers cm SET cm.lastReadAt = :readAt WHERE cm.channel.id = :channelId AND cm.userId = :userId")
     fun updateLastReadAt(@Param("channelId") channelId: UUID, @Param("userId") userId: UUID, @Param("readAt") readAt: LocalDateTime): Int
 
     /**
      * 채널에서 사용자 제거 (soft delete)
      */
-    @Query("UPDATE ChannelMembers cm SET cm.isActive = false, cm.leftAt = :leftAt WHERE cm.channel.id = :channelId AND cm.user.id = :userId")
+    @Query("UPDATE ChannelMembers cm SET cm.isActive = false, cm.leftAt = :leftAt WHERE cm.channel.id = :channelId AND cm.userId = :userId")
     fun removeUserFromChannel(@Param("channelId") channelId: UUID, @Param("userId") userId: UUID, @Param("leftAt") leftAt: LocalDateTime): Int
 
     /**
@@ -84,7 +84,7 @@ interface ChannelMembersRepository : JpaRepository<ChannelMembers, UUID> {
      */
     @Query("""
         SELECT cm FROM ChannelMembers cm 
-        WHERE cm.user.id = :userId 
+        WHERE cm.userId = :userId 
         AND cm.isActive = true 
         AND (cm.lastReadAt IS NULL OR cm.lastReadAt < :since)
         ORDER BY cm.channel.updatedAt DESC
@@ -100,6 +100,6 @@ interface ChannelMembersRepository : JpaRepository<ChannelMembers, UUID> {
     /**
      * 채널 멤버 역할 변경
      */
-    @Query("UPDATE ChannelMembers cm SET cm.role = :role WHERE cm.channel.id = :channelId AND cm.user.id = :userId")
+    @Query("UPDATE ChannelMembers cm SET cm.role = :role WHERE cm.channel.id = :channelId AND cm.userId = :userId")
     fun updateMemberRole(@Param("channelId") channelId: UUID, @Param("userId") userId: UUID, @Param("role") role: ChannelRole): Int
 }
