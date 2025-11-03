@@ -103,9 +103,9 @@ class ChatController(
 
             members.forEach { member ->
                 // 발신자는 제외
-                if (member.user.id == userId) return@forEach
+                if (member.userId == userId) return@forEach
 
-                val recipientId = member.user.id
+                val recipientId = member.userId
 
                 try {
                     // 4-1. 세션 확인 및 자동 초기화
@@ -175,9 +175,9 @@ class ChatController(
 
             members.forEach { member ->
                 // 발신자는 제외
-                if (member.user.id == userId) return@forEach
+                if (member.userId == userId) return@forEach
 
-                val recipientId = member.user.id
+                val recipientId = member.userId
 
                 // 각 수신자별로 암호화된 내용 전송
                 val recipientEncryptedContent = encryptedContents[recipientId]
@@ -215,9 +215,9 @@ class ChatController(
                 }
 
                 // 오프라인 사용자인 경우 FCM 알림 추가 전송
-                val isOnline = onlineStatusService.isUserOnline(member.user.id.toString())
+                val isOnline = onlineStatusService.isUserOnline(member.userId.toString())
                 if (!isOnline) {
-                    logger.debug("오프라인 사용자 FCM 전송: userId={}", member.user.id)
+                    logger.debug("오프라인 사용자 FCM 전송: userId={}", member.userId)
                     
                     try {
                         val notificationResult = notificationService.sendMessageNotification(
@@ -228,13 +228,13 @@ class ChatController(
                         )
                         
                         if (notificationResult.success) {
-                            logger.info("FCM 알림 전송 성공: userId={}", member.user.id)
+                            logger.info("FCM 알림 전송 성공: userId={}", member.userId)
                         } else {
-                            logger.warn("FCM 알림 전송 실패: userId={}, reason={}", 
-                                member.user.id, notificationResult.message)
+                            logger.warn("FCM 알림 전송 실패: userId={}, reason={}",
+                                member.userId, notificationResult.message)
                         }
                     } catch (e: Exception) {
-                        logger.error("FCM 알림 전송 중 오류: userId={}", member.user.id, e)
+                        logger.error("FCM 알림 전송 중 오류: userId={}", member.userId, e)
                     }
                 }
             }

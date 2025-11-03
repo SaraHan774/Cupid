@@ -7,7 +7,6 @@ import com.august.cupid.model.entity.ChannelMembers
 import com.august.cupid.model.entity.ChannelRole
 import com.august.cupid.repository.ChannelRepository
 import com.august.cupid.repository.ChannelMembersRepository
-import com.august.cupid.repository.UserRepository
 import com.august.cupid.repository.MatchRepository
 import jakarta.persistence.EntityManager
 import org.slf4j.LoggerFactory
@@ -27,7 +26,7 @@ import java.util.*
 class ChannelService(
     private val channelRepository: ChannelRepository,
     private val channelMembersRepository: ChannelMembersRepository,
-    private val userRepository: UserRepository,
+    private val userService: UserService,
     private val matchRepository: MatchRepository,
     private val entityManager: EntityManager,
     private val messagingTemplate: org.springframework.messaging.simp.SimpMessagingTemplate
@@ -40,21 +39,24 @@ class ChannelService(
      */
     fun createChannel(request: CreateChannelRequest, creatorId: UUID): ApiResponse<ChannelResponse> {
         return try {
-            // 생성자 존재 확인
-            val creator = userRepository.findById(creatorId).orElse(null)
-            if (creator == null) {
+            // 생성자 존재 확인 - UserService 사용
+            if (!userService.existsById(creatorId)) {
                 return ApiResponse(false, message = "생성자를 찾을 수 없습니다")
             }
 
+            if (!userService.isUserActive(creatorId)) {
+                return ApiResponse(false, message = "비활성화된 사용자입니다")
+            }
+
             val channelType = ChannelType.valueOf(request.type.uppercase())
-            
+
             // 매칭 ID 확인 (1:1 채널인 경우)
             if (channelType == ChannelType.DIRECT && request.matchId != null) {
                 val match = matchRepository.findById(request.matchId).orElse(null)
                 if (match == null) {
                     return ApiResponse(false, message = "매칭을 찾을 수 없습니다")
                 }
-                
+
                 // 이미 해당 매칭으로 채널이 생성되었는지 확인
                 if (channelRepository.existsByMatchId(request.matchId)) {
                     return ApiResponse(false, message = "이미 해당 매칭으로 채널이 생성되었습니다")
@@ -66,11 +68,11 @@ class ChannelService(
                 matchRepository.findById(request.matchId).orElse(null)
             } else null
 
-            // 채널 생성 - ID, createdAt, updatedAt는 JPA가 자동 생성 (기본값 사용)
+            // 채널 생성 - creatorId만 저장
             val channel = Channel(
                 type = channelType,
                 name = request.name,
-                creator = creator,
+                creatorId = creatorId,
                 match = match
             )
 
@@ -81,7 +83,7 @@ class ChannelService(
             // 생성자를 채널 멤버로 추가
             val channelMember = ChannelMembers(
                 channel = savedChannel,
-                user = creator,
+                userId = creatorId,
                 role = ChannelRole.ADMIN,
                 joinedAt = LocalDateTime.now(),
                 isActive = true
@@ -158,10 +160,13 @@ class ChannelService(
                 return ApiResponse(false, message = "채널을 찾을 수 없습니다")
             }
 
-            // 사용자 존재 확인
-            val user = userRepository.findById(userId).orElse(null)
-            if (user == null) {
+            // 사용자 존재 확인 - UserService 사용
+            if (!userService.existsById(userId)) {
                 return ApiResponse(false, message = "사용자를 찾을 수 없습니다")
+            }
+
+            if (!userService.isUserActive(userId)) {
+                return ApiResponse(false, message = "비활성화된 사용자입니다")
             }
 
             // 초대자가 채널 멤버인지 확인
@@ -178,7 +183,7 @@ class ChannelService(
             // 채널 멤버 추가
             val channelMember = ChannelMembers(
                 channel = channel,
-                user = user,
+                userId = userId,
                 role = ChannelRole.MEMBER,
                 joinedAt = LocalDateTime.now(),
                 isActive = true
@@ -189,7 +194,9 @@ class ChannelService(
             channel.updatedAt = LocalDateTime.now()
             channelRepository.save(channel)
 
-            logger.info("사용자를 채널에 추가 완료: ${user.username} -> ${channel.name ?: "Unnamed"} (${channel.id})")
+            // UserService에서 username 조회
+            val userInfo = userService.getUserInfo(userId)
+            logger.info("사용자를 채널에 추가 완료: ${userInfo?.username ?: "Unknown"} -> ${channel.name ?: "Unnamed"} (${channel.id})")
 
             // WebSocket으로 초대된 사용자에게 채널 정보 전송
             try {
@@ -258,7 +265,27 @@ class ChannelService(
     fun getChannelMembers(channelId: UUID): ApiResponse<List<UserResponse>> {
         return try {
             val members = channelMembersRepository.findByChannelIdAndIsActiveTrue(channelId)
-            val userResponses = members.map { it.user.toResponse() }
+
+            // UserService를 통해 사용자 정보 일괄 조회 (N+1 방지)
+            val userIds = members.map { it.userId }
+            val userInfoMap = userService.getUserInfos(userIds)
+
+            // UserInfoDto를 UserResponse로 변환
+            val userResponses = userIds.mapNotNull { userId ->
+                userInfoMap[userId]?.let { userInfo ->
+                    UserResponse(
+                        id = userInfo.id,
+                        username = userInfo.username,
+                        email = userInfo.email ?: "",
+                        profileImageUrl = userInfo.profileImageUrl,
+                        bio = null,
+                        isActive = userInfo.isActive,
+                        createdAt = userInfo.createdAt,
+                        lastSeenAt = userInfo.lastSeenAt
+                    )
+                }
+            }
+
             ApiResponse(true, data = userResponses)
         } catch (e: Exception) {
             logger.error("채널 멤버 목록 조회 실패: ${e.message}", e)
@@ -340,7 +367,7 @@ class ChannelService(
             id = this.id!!,
             name = this.name,
             type = this.type.name,
-            creatorId = this.creator.id,
+            creatorId = this.creatorId,
             matchId = this.match?.id,
             createdAt = this.createdAt,
             updatedAt = this.updatedAt

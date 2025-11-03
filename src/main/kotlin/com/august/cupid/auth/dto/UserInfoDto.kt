@@ -1,6 +1,7 @@
 package com.august.cupid.auth.dto
 
 import com.august.cupid.model.entity.User
+import java.time.LocalDateTime
 import java.util.UUID
 
 /**
@@ -14,7 +15,9 @@ data class UserInfoDto(
     val username: String,
     val email: String?,
     val profileImageUrl: String?,
-    val isActive: Boolean
+    val isActive: Boolean,
+    val createdAt: LocalDateTime,
+    val lastSeenAt: LocalDateTime?
 ) {
     companion object {
         /**
@@ -26,7 +29,9 @@ data class UserInfoDto(
                 username = user.username,
                 email = user.email,
                 profileImageUrl = user.profileImageUrl,
-                isActive = user.isActive
+                isActive = user.isActive,
+                createdAt = user.createdAt,
+                lastSeenAt = user.lastSeenAt
             )
         }
 

@@ -35,9 +35,8 @@ class ChannelMembers(
     @JoinColumn(name = "channel_id", nullable = false)
     val channel: Channel,
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    val user: User,
+    @Column(name = "user_id", nullable = false, columnDefinition = "uuid")
+    val userId: UUID,
 
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)

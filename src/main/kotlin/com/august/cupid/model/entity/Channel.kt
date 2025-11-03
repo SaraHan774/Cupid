@@ -35,9 +35,8 @@ data class Channel(
     @Column(name = "name", length = 255)
     val name: String?,
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "creator_id", nullable = false)
-    val creator: User,
+    @Column(name = "creator_id", nullable = false, columnDefinition = "uuid")
+    val creatorId: UUID,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "match_id")

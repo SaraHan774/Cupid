@@ -249,7 +249,7 @@ class MatchService(
             val channel = com.august.cupid.model.entity.Channel(
                 name = null, // 1:1 채널은 이름 없음
                 type = com.august.cupid.model.entity.ChannelType.valueOf(request.type.uppercase()),
-                creator = match.user1,
+                creatorId = match.user1.id!!,
                 match = match
             )
 
@@ -258,7 +258,7 @@ class MatchService(
             // 두 사용자를 모두 채널 멤버로 추가
             val member1 = ChannelMembers(
                 channel = savedChannel,
-                user = match.user1,
+                userId = match.user1.id!!,
                 role = com.august.cupid.model.entity.ChannelRole.MEMBER,
                 joinedAt = LocalDateTime.now(),
                 isActive = true
@@ -266,7 +266,7 @@ class MatchService(
 
             val member2 = ChannelMembers(
                 channel = savedChannel,
-                user = match.user2,
+                userId = match.user2.id!!,
                 role = com.august.cupid.model.entity.ChannelRole.MEMBER,
                 joinedAt = LocalDateTime.now(),
                 isActive = true
@@ -352,7 +352,7 @@ class MatchService(
             id = this.id!!,
             name = this.name,
             type = this.type.name,
-            creatorId = this.creator.id,
+            creatorId = this.creatorId,
             matchId = this.match?.id,
             createdAt = this.createdAt,
             updatedAt = this.updatedAt
