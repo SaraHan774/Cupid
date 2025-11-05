@@ -45,9 +45,13 @@ out/
 
 ### Log Files ###
 *.log
+*.log.*
+*.log.*.gz
 detailed_log.log
 server.log
 server_debug.log
+logs/
+boot.log
 CLAUDE.md
 # Documentation archive (reference only, not maintained)
 docs-archive/

@@ -1,4 +1,4 @@
-# Cupid 시스템 아키텍처 다이어그램
+#  Cupid 시스템 아키텍처 다이어그램
 
 ## 목차
 1. [시스템 개요](#1-시스템-개요)
@@ -36,6 +36,7 @@ graph TB
         NotificationCtrl[Notification Controller<br/>알림 설정]
         OnlineStatusCtrl[Online Status Controller<br/>온라인 상태]
         KeyExchangeCtrl[Key Exchange Controller<br/>키 교환]
+        KeyBackupCtrl[Key Backup Controller<br/>키 백업/복구]
         AdminCtrl[Admin Controllers<br/>관리자 기능]
     end
     
@@ -43,10 +44,14 @@ graph TB
         AuthSvc[Auth Service<br/>인증 로직]
         UserSvc[User Service<br/>사용자 관리]
         ProfileSvc[Profile Image Service<br/>프로필 이미지]
+        ImageOptSvc[Image Optimization Service<br/>이미지 최적화]
+        StorageSvc[Storage Service<br/>S3/로컬 저장]
         ChannelSvc[Channel Service<br/>채널 비즈니스 로직]
         MessageSvc[Message Service<br/>메시지 처리]
         EncryptionSvc[Encryption Service<br/>암호화 유틸]
         SignalSvc[Signal Protocol Service<br/>Signal Protocol]
+        KeyBackupSvc[Key Backup Service<br/>키 백업/복구]
+        MetricsSvc[Encryption Metrics Service<br/>성능 메트릭]
         NotificationSvc[Notification Service<br/>알림 처리]
         OnlineSvc[Online Status Service<br/>온라인 상태]
         TypingSvc[Typing Indicator Service<br/>타이핑 표시]
@@ -61,6 +66,7 @@ graph TB
         ChannelRepo[Channel Repository]
         MessageRepo[Message Repository<br/>MongoDB]
         SignalRepo[Signal Repositories<br/>키 관리]
+        KeyBackupRepo[Key Backup Repository<br/>키 백업]
         NotificationRepo[Notification Repositories<br/>알림 설정]
         MatchRepo[Match Repository]
         ReportRepo[Report Repository]
@@ -95,9 +101,12 @@ graph TB
     Security --> NotificationCtrl
     Security --> OnlineStatusCtrl
     Security --> KeyExchangeCtrl
+    Security --> KeyBackupCtrl
     
     AuthCtrl --> AuthSvc
     ProfileCtrl --> ProfileSvc
+    ProfileCtrl --> ImageOptSvc
+    ProfileCtrl --> StorageSvc
     ChannelCtrl --> ChannelSvc
     MessageCtrl --> MessageSvc
     ChatCtrl --> MessageSvc
@@ -107,20 +116,29 @@ graph TB
     NotificationCtrl --> NotificationSvc
     OnlineStatusCtrl --> OnlineSvc
     KeyExchangeCtrl --> SignalSvc
+    KeyBackupCtrl --> KeyBackupSvc
     
     AuthSvc --> UserRepo
-    ProfileSvc --> Storage
+    ProfileSvc --> StorageSvc
+    ProfileSvc --> ImageOptSvc
     ProfileSvc --> UserRepo
+    ImageOptSvc --> StorageSvc
     ChannelSvc --> ChannelRepo
     MessageSvc --> MessageRepo
     SignalSvc --> SignalRepo
+    SignalSvc --> MetricsSvc
+    KeyBackupSvc --> KeyBackupRepo
+    KeyBackupSvc --> SignalSvc
     NotificationSvc --> NotificationRepo
     NotificationSvc --> FcmSvc
     MatchSvc --> MatchRepo
     
+    StorageSvc --> Storage
+    
     UserRepo --> PostgreSQL
     ChannelRepo --> PostgreSQL
     SignalRepo --> PostgreSQL
+    KeyBackupRepo --> PostgreSQL
     NotificationRepo --> PostgreSQL
     MatchRepo --> PostgreSQL
     MessageRepo --> MongoDB
@@ -154,18 +172,18 @@ graph TB
 graph TB
     subgraph "Presentation Layer"
         direction TB
-        RestControllers[REST Controllers<br/>13개 컨트롤러]
+        RestControllers[REST Controllers<br/>14개 컨트롤러]
         WebSocketControllers[WebSocket Controllers<br/>STOMP 핸들러]
     end
     
     subgraph "Business Logic Layer"
         direction TB
-        Services[Services<br/>15개 서비스]
+        Services[Services<br/>19개 서비스]
     end
     
     subgraph "Data Access Layer"
         direction TB
-        Repositories[Repositories<br/>17개 리포지토리]
+        Repositories[Repositories<br/>19개 리포지토리]
     end
     
     subgraph "Domain Model Layer"
@@ -287,6 +305,14 @@ classDiagram
         +getKeys(userId): ResponseEntity
         +initiateKeyExchange(request): ResponseEntity
         +getPreKeyBundle(recipientId): ResponseEntity
+    }
+    
+    class KeyBackupController {
+        -keyBackupService: KeyBackupService
+        +createBackup(authentication, request): ResponseEntity
+        +restoreBackup(authentication, request): ResponseEntity
+        +getBackupList(authentication): ResponseEntity
+        +deleteBackup(authentication, backupId): ResponseEntity
     }
     
     class AdminDashboardController {
@@ -578,12 +604,15 @@ sequenceDiagram
 graph TB
     subgraph "Encryption Controllers"
         KeyExchangeController[Key Exchange Controller<br/>키 교환 API]
+        KeyBackupController[Key Backup Controller<br/>키 백업/복구 API]
         AdminKeyRotationController[Admin Key Rotation Controller<br/>관리자 키 관리]
     end
     
     subgraph "Encryption Services"
         SignalProtocolService[Signal Protocol Service<br/>메인 암호화 서비스]
         EncryptionService[Encryption Service<br/>암호화 유틸리티]
+        KeyBackupService[Key Backup Service<br/>키 백업/복구]
+        EncryptionMetricsService[Encryption Metrics Service<br/>성능 메트릭]
         DatabaseSignalProtocolStore[Database Signal Protocol Store<br/>키 저장소 구현]
     end
     
@@ -599,6 +628,7 @@ graph TB
         SignalSessionRepository[Signal Session Repository<br/>세션 정보]
         UserKeysRepository[User Keys Repository<br/>사용자 키 쌍]
         KeyRotationHistoryRepository[Key Rotation History Repository<br/>키 교체 이력]
+        KeyBackupRepository[Key Backup Repository<br/>키 백업]
     end
     
     subgraph "Signal Protocol Entities"
@@ -611,11 +641,15 @@ graph TB
     end
     
     KeyExchangeController --> SignalProtocolService
+    KeyBackupController --> KeyBackupService
     AdminKeyRotationController --> SignalProtocolService
     
     SignalProtocolService --> EncryptionService
     SignalProtocolService --> DatabaseSignalProtocolStore
     SignalProtocolService --> KeyEncryptionUtil
+    SignalProtocolService --> EncryptionMetricsService
+    KeyBackupService --> SignalProtocolService
+    KeyBackupService --> KeyBackupRepository
     
     DatabaseSignalProtocolStore --> SignalIdentityRepository
     DatabaseSignalProtocolStore --> SignalPreKeyRepository
@@ -625,12 +659,15 @@ graph TB
     KeyRotationScheduler --> SignalProtocolService
     KeyRotationScheduler --> KeyRotationHistoryRepository
     
+    KeyBackupRepository --> KeyBackup[(Key Backup<br/>키 백업)]
+    
     SignalIdentityRepository --> SignalIdentity
     SignalPreKeyRepository --> SignalPreKey
     SignalSignedPreKeyRepository --> SignalSignedPreKey
     SignalSessionRepository --> SignalSession
     UserKeysRepository --> UserKeys
     KeyRotationHistoryRepository --> KeyRotationHistory
+    KeyBackupRepository --> KeyBackup
     
     SignalIdentity --> PostgreSQL[(PostgreSQL)]
     SignalPreKey --> PostgreSQL
@@ -638,6 +675,7 @@ graph TB
     SignalSession --> PostgreSQL
     UserKeys --> PostgreSQL
     KeyRotationHistory --> PostgreSQL
+    KeyBackup --> PostgreSQL
     
     style SignalProtocolService fill:#e3f2fd
     style KeyEncryptionUtil fill:#fff3e0
@@ -706,6 +744,7 @@ erDiagram
     
     MESSAGE ||--o{ MESSAGE_READS : "read_by"
     
+    USER ||--o{ KEY_BACKUP : "has"
     USER_KEYS ||--o{ SIGNAL_IDENTITY : "has"
     USER_KEYS ||--o{ SIGNAL_SIGNED_PRE_KEY : "has"
     USER_KEYS ||--o{ SIGNAL_PRE_KEY : "has"
@@ -894,6 +933,18 @@ erDiagram
         text reason
     }
     
+    KEY_BACKUP {
+        uuid id PK
+        uuid user_id FK
+        text encrypted_backup_data
+        text backup_hash
+        timestamp expires_at
+        boolean is_used
+        timestamp used_at
+        jsonb metadata
+        timestamp created_at
+    }
+    
     SECURITY_AUDIT_LOG {
         uuid id PK
         uuid user_id FK
@@ -961,7 +1012,7 @@ graph TB
 
 ## 10. 주요 컴포넌트 역할 요약
 
-### 10.1 컨트롤러 (13개)
+### 10.1 컨트롤러 (14개)
 
 | 컨트롤러 | 역할 | 주요 기능 |
 |---------|------|----------|
@@ -975,11 +1026,12 @@ graph TB
 | `NotificationController` | 알림 설정 | FCM 토큰 등록, 알림 설정 관리 |
 | `OnlineStatusController` | 온라인 상태 | 사용자 온라인 상태 조회 |
 | `KeyExchangeController` | 키 교환 | Signal Protocol 키 생성/교환 |
+| `KeyBackupController` | 키 백업/복구 | 키 백업 생성, 복구, 목록 조회, 삭제 |
 | `AdminDashboardController` | 관리자 대시보드 | 시스템 통계 조회 |
 | `AdminKeyRotationController` | 키 관리 | 관리자 키 교체 작업 |
 | `SecurityAuditController` | 보안 감사 | 보안 이벤트 로그 조회 |
 
-### 10.2 서비스 (15개)
+### 10.2 서비스 (19개)
 
 | 서비스 | 역할 | 주요 기능 |
 |--------|------|----------|
@@ -987,10 +1039,13 @@ graph TB
 | `UserService` | 사용자 관리 | 사용자 정보 CRUD |
 | `ProfileImageService` | 프로필 이미지 | 이미지 업로드, 최적화, 다중 해상도 생성 |
 | `ImageOptimizationService` | 이미지 최적화 | 리사이징, WebP 변환, BlurHash 생성 |
+| `StorageService` | 파일 저장 | S3/로컬 파일 저장, 삭제, URL 생성 |
 | `ChannelService` | 채널 비즈니스 로직 | 채널 생성/관리, 멤버 관리 |
 | `MessageService` | 메시지 처리 | 메시지 저장, 암호화, 전송 |
 | `EncryptionService` | 암호화 유틸 | 암호화 헬퍼 함수 |
 | `SignalProtocolService` | Signal Protocol | E2E 암호화, 키 관리, 세션 관리 |
+| `KeyBackupService` | 키 백업/복구 | 키 백업 생성, 복구, 무결성 검증 |
+| `EncryptionMetricsService` | 암호화 메트릭 | Prometheus 메트릭 수집 (타이머, 카운터, 게이지) |
 | `NotificationService` | 알림 처리 | 알림 설정 확인, 푸시 전송 로직 |
 | `FcmDeliveryService` | FCM 전송 | Firebase 푸시 알림 전송 |
 | `OnlineStatusService` | 온라인 상태 | 사용자 온라인/오프라인 상태 관리 |
@@ -998,8 +1053,9 @@ graph TB
 | `ReadReceiptService` | 읽음 표시 | 읽음 상태 관리 |
 | `MatchService` | 매칭 관리 | 매칭 생성/조회, 만료 처리 |
 | `SecurityAuditLogger` | 보안 감사 | 보안 이벤트 로깅 |
+| `RateLimitService` | Rate Limit | Bucket4j 기반 요청 제한 관리 |
 
-### 10.3 리포지토리 (17개)
+### 10.3 리포지토리 (19개)
 
 | 리포지토리 | 역할 | 데이터베이스 |
 |-----------|------|------------|
@@ -1020,6 +1076,7 @@ graph TB
 | `SignalSessionRepository` | Signal 세션 | PostgreSQL |
 | `UserKeysRepository` | 사용자 키 쌍 | PostgreSQL |
 | `KeyRotationHistoryRepository` | 키 교체 이력 | PostgreSQL |
+| `KeyBackupRepository` | 키 백업 데이터 | PostgreSQL |
 | `SecurityAuditLogRepository` | 보안 감사 로그 | PostgreSQL |
 
 ### 10.4 설정 클래스 (6개)
@@ -1071,5 +1128,5 @@ graph TB
 
 ---
 
-*최종 업데이트: 2025-01-26*
+*최종 업데이트: 2025-11-04*
 
