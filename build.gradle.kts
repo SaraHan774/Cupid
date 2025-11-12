@@ -68,7 +68,7 @@ dependencies {
     implementation("org.apache.commons:commons-pool2:2.12.0")
 
     // API Documentation (SpringDoc OpenAPI)
-    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.3.0")
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0")
 
     // Kotlin
     implementation("org.jetbrains.kotlin:kotlin-reflect")
