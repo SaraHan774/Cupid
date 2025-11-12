@@ -9,6 +9,11 @@
 6. [알림 시스템](#6-알림-시스템)
 7. [Signal Protocol 암호화 시스템](#7-signal-protocol-암호화-시스템)
 8. [데이터베이스 관계도](#8-데이터베이스-관계도)
+9. [전체 시스템 데이터 플로우](#9-전체-시스템-데이터-플로우)
+10. [주요 컴포넌트 역할 요약](#10-주요-컴포넌트-역할-요약)
+11. [Rate Limiting & Abuse Protection](#11-rate-limiting--abuse-protection)
+12. [Observability & Metrics](#12-observability--metrics)
+13. [Key Backup 플로우](#13-key-backup-플로우)
 
 ---
 
@@ -342,8 +347,13 @@ classDiagram
 graph LR
     subgraph "Security Layer"
         JwtFilter[JWT Authentication Filter<br/>토큰 검증]
-        RateLimitFilter[Rate Limit Filter<br/>요청 제한]
+        RateLimitFilter[Rate Limit Filter<br/>기본 Rate Limit + IP 보호]
+        RateLimitInterceptor["Rate Limit Interceptor<br/>@RateLimit 엔드포인트 제어"]
         SecurityConfig[Security Config<br/>Spring Security 설정]
+    end
+    
+    subgraph "Rate Limit Configuration"
+        RateLimitAnnotation["@RateLimit 어노테이션<br/>엔드포인트별 정책 선언"]
     end
     
     subgraph "Authentication Services"
@@ -360,12 +370,15 @@ graph LR
     
     subgraph "Rate Limiting"
         RateLimitService[Rate Limit Service<br/>Bucket4j + Redis]
-        Redis[(Redis<br/>요청 카운터)]
+        Redis[(Redis<br/>요청 카운터 + 분산 버킷)]
     end
     
     JwtFilter --> AuthService
     JwtFilter --> JwtUtil
     RateLimitFilter --> RateLimitService
+    RateLimitInterceptor --> RateLimitService
+    RateLimitService --> Redis
+    
     RateLimitFilter --> Redis
     
     AuthService --> UserService
@@ -379,6 +392,9 @@ graph LR
     
     SecurityConfig --> JwtFilter
     SecurityConfig --> RateLimitFilter
+    SecurityConfig --> RateLimitInterceptor
+    RateLimitAnnotation --> RateLimitInterceptor
+    RateLimitAnnotation --> RateLimitFilter
     
     style JwtFilter fill:#ffebee
     style RateLimitFilter fill:#fff3e0
@@ -973,6 +989,7 @@ graph TB
     subgraph "애플리케이션 레이어"
         Controllers[Controllers<br/>비즈니스 로직 제어]
         Services[Services<br/>핵심 비즈니스 로직]
+        Actuator[Actuator Endpoints<br/>/actuator/prometheus]
     end
     
     subgraph "데이터 레이어"
@@ -985,6 +1002,8 @@ graph TB
     subgraph "외부 서비스"
         Firebase[Firebase<br/>FCM 푸시]
         Storage[S3/Storage<br/>파일 저장]
+        Prometheus[(Prometheus<br/>메트릭 수집)]
+        Grafana[Grafana<br/>관측 대시보드]
     end
     
     Client -->|HTTP| REST
@@ -998,6 +1017,9 @@ graph TB
     Services --> Redis
     Services --> Firebase
     Services --> Storage
+    Services --> Actuator
+    Actuator --> Prometheus
+    Prometheus --> Grafana
     
     style Client fill:#e1f5ff
     style Controllers fill:#e3f2fd
@@ -1006,6 +1028,8 @@ graph TB
     style MongoDB fill:#47A248
     style Redis fill:#DC382D
     style Firebase fill:#FFA000
+    style Prometheus fill:#ffcc80
+    style Grafana fill:#ffe082
 ```
 
 ---
@@ -1077,7 +1101,7 @@ graph TB
 | `UserKeysRepository` | 사용자 키 쌍 | PostgreSQL |
 | `KeyRotationHistoryRepository` | 키 교체 이력 | PostgreSQL |
 | `KeyBackupRepository` | 키 백업 데이터 | PostgreSQL |
-| `SecurityAuditLogRepository` | 보안 감사 로그 | PostgreSQL |
+| `SecurityAuditLogRepository` | 보안 감사 로그 | MongoDB |
 
 ### 10.4 설정 클래스 (6개)
 
@@ -1120,6 +1144,155 @@ graph TB
 
 ---
 
+## 11. Rate Limiting & Abuse Protection
+
+- **근거 문서:** `documents/tasks/today-tasks.md` Task 1, `security/RateLimit*.kt`
+- `@RateLimit` 어노테이션으로 엔드포인트별 정책을 선언하고 USER/IP 단위 토큰 버킷을 선택한다.
+- `RateLimitFilter`는 모든 HTTP 요청에 기본 Rate Limit를 적용해 즉시 남은 토큰을 확인한다.
+- `RateLimitInterceptor`는 어노테이션 기반 세밀 제어와 `X-RateLimit-*`, `Retry-After` 헤더 작성을 담당한다.
+- `RateLimitService`는 Bucket4j + Redis 조합으로 분산 토큰 버킷을 관리하며 테스트 프로필에서는 완화된 값을 사용한다.
+
+```mermaid
+graph LR
+    Client[클라이언트 요청] --> SecurityChain[Spring Security FilterChain]
+    SecurityChain --> RateLimitFilter[RateLimitFilter<br/>기본 요청 제한]
+    RateLimitFilter --> RateLimitService[RateLimitService<br/>Bucket4j + Redis]
+    RateLimitService --> Redis[(Redis<br/>분산 토큰 버킷 저장소)]
+    SecurityChain --> RateLimitInterceptor["RateLimitInterceptor<br/>@RateLimit 기반 제어"]
+    RateLimitAnnotation["@RateLimit 어노테이션<br/>엔드포인트별 정책"] --> RateLimitInterceptor
+    RateLimitInterceptor --> RateLimitService
+    RateLimitInterceptor --> Controller[컨트롤러]
+    Controller --> ServiceLayer[서비스 계층]
+```
+
+```mermaid
+sequenceDiagram
+    participant Client as 클라이언트
+    participant Filter as RateLimitFilter
+    participant Interceptor as RateLimitInterceptor
+    participant Service as RateLimitService
+    participant Redis as Redis 버킷
+    participant Controller as 컨트롤러
+    participant Handler as 비즈니스 서비스
+
+    Client->>Filter: HTTP 요청
+    Filter->>Service: 기본 버킷 조회 (URI/사용자 기준)
+    Service->>Redis: 토큰 소비 시도
+    Redis-->>Service: 남은 토큰/대기 시간
+    alt 잔여 토큰 있음
+        Service-->>Filter: 소비 성공
+        Filter->>Interceptor: Handler 처리 계속
+        Note over Interceptor: @RateLimit 어노테이션 탐색 및 병합 정책 계산
+        Interceptor->>Service: 커스텀 버킷 조회/생성
+        Service->>Redis: 토큰 소비 시도
+        Redis-->>Service: 남은 토큰
+        Service-->>Interceptor: 소비 성공, 남은 토큰
+        Interceptor->>Controller: 요청 위임 + 응답 헤더 준비
+        Controller->>Handler: 비즈니스 로직 실행
+        Handler-->>Controller: 처리 결과
+        Controller-->>Client: 200 OK + X-RateLimit-* 헤더
+    else 토큰 부족
+        Service-->>Filter: 소비 실패
+        Filter-->>Client: 429 Too Many Requests + Retry-After
+    end
+```
+
+## 12. Observability & Metrics
+
+- **근거 문서:** `build.gradle.kts` Actuator/Micrometer 의존성, `service/EncryptionMetricsService.kt`
+- `EncryptionMetricsService`가 Micrometer `MeterRegistry`를 통해 암호화 관련 Timer·Counter·Gauge를 기록하고 `/actuator/prometheus`로 노출한다.
+- Prometheus가 주기적으로 엔드포인트를 스크랩하며 Grafana 대시보드에서 시각화 및 알림을 구성한다.
+- 키 생성/암호화/복호화 시간과 오류율, 활성 세션, 사용 가능한 Pre-Key 수를 메트릭으로 추적한다.
+
+```mermaid
+graph LR
+    SignalProtocolService[SignalProtocolService<br/>암호화 로직] --> EncryptionMetricsService[EncryptionMetricsService<br/>Micrometer 래퍼]
+    KeyBackupService[KeyBackupService<br/>백업/복구] --> EncryptionMetricsService
+    KeyRotationScheduler[KeyRotationScheduler<br/>주기적 키 교체] --> EncryptionMetricsService
+    EncryptionMetricsService --> MeterRegistry[Micrometer MeterRegistry]
+    MeterRegistry --> ActuatorEndpoint[/Actuator<br/>/actuator/prometheus/]
+    ActuatorEndpoint --> Prometheus[(Prometheus 서버)]
+    Prometheus --> Grafana[Grafana 대시보드]
+```
+
+| Metric | 타입 | 태그 | 설명 |
+| --- | --- | --- | --- |
+| `encryption.key.generation` | Timer | `operation=generate` | Signal 키 생성 수행 시간 (p50/p95/p99) |
+| `encryption.message.encrypt` | Timer | `operation=encrypt`, `channel_type` | 메시지 암호화 지연 |
+| `encryption.message.decrypt` | Timer | `operation=decrypt`, `device` | 메시지 복호화 지연 |
+| `encryption.session.initialize` | Timer | `operation=initialize` | 세션 초기화 소요 시간 |
+| `encryption.key.generation.count` | Counter | `operation=generate` | 키 생성 호출 수 |
+| `encryption.message.encrypt.count` | Counter | `operation=encrypt` | 암호화 수행 횟수 |
+| `encryption.message.decrypt.count` | Counter | `operation=decrypt` | 복호화 수행 횟수 |
+| `encryption.errors` | Counter | `error_type`, `operation` | 오류 유형별 실패 건수 |
+| `encryption.sessions.active` | Gauge | `environment` | 활성화된 암호화 세션 수 |
+| `encryption.prekeys.available` | Gauge | `environment` | 남아있는 One-time Pre-Key 개수 |
+
+## 13. Key Backup 플로우
+
+- **근거 문서:** `documents/tasks/today-tasks.md` Task 3, `service/KeyBackupService.kt`, `service/SecurityAuditLogger.kt`
+- 백업 생성 시 사용자 키 조회 → AES-256-GCM 암호화 → SHA-256 해시 검증 후 PostgreSQL에 저장한다.
+- 복구 시 백업 무결성 검증 후 복호화하고, 백업 사용 플래그를 업데이트하며 감사 로그를 남긴다.
+- 모든 백업/복구/삭제 이벤트는 `SecurityAuditLogger`가 MongoDB TTL 컬렉션에 기록한다.
+
+```mermaid
+sequenceDiagram
+    participant Client as 클라이언트
+    participant Controller as KeyBackupController
+    participant Service as KeyBackupService
+    participant KeysRepo as UserKeysRepository
+    participant Util as KeyEncryptionUtil
+    participant Repo as KeyBackupRepository
+    participant Audit as SecurityAuditLogger
+    participant AuditRepo as SecurityAuditLogRepository
+    participant Mongo as MongoDB
+    participant DB as PostgreSQL
+
+    Client->>Controller: POST /api/v1/keys/backup
+    Controller->>Service: createBackup(request)
+    Service->>KeysRepo: findActiveKeysByUserId(userId)
+    KeysRepo-->>Service: 사용자 키 정보
+    Service->>Util: encryptPrivateKey(backupData, password)
+    Util-->>Service: 암호화된 백업 데이터
+    Service->>Repo: save(KeyBackup)
+    Repo->>DB: INSERT 백업 레코드
+    DB-->>Repo: 저장 완료
+    Service->>Audit: logKeyBackup(success=true)
+    Audit->>AuditRepo: save(SecurityAuditLog)
+    AuditRepo->>Mongo: TTL 컬렉션 저장
+    Service-->>Controller: KeyBackupResponse
+    Controller-->>Client: 201 Created
+```
+
+```mermaid
+sequenceDiagram
+    participant Client as 클라이언트
+    participant Controller as KeyBackupController
+    participant Service as KeyBackupService
+    participant Repo as KeyBackupRepository
+    participant Util as KeyEncryptionUtil
+    participant Audit as SecurityAuditLogger
+    participant AuditRepo as SecurityAuditLogRepository
+    participant Mongo as MongoDB
+
+    Client->>Controller: POST /api/v1/keys/backup/restore
+    Controller->>Service: restoreBackup(request)
+    Service->>Repo: findActiveBackupsByUserId / findByBackupId
+    Repo-->>Service: 백업 엔티티
+    Service->>Util: decryptPrivateKey(encryptedData, password)
+    Util-->>Service: 복호화된 JSON 데이터
+    Service->>Service: SHA-256 해시 검증 및 백업 사용 처리
+    Service->>Repo: markBackupAsUsed()
+    Repo-->>Service: 업데이트 결과
+    Service->>Audit: logKeyRestore(success)
+    Audit->>AuditRepo: save(SecurityAuditLog)
+    AuditRepo->>Mongo: TTL 컬렉션 저장
+    Service-->>Controller: 복구 결과 (Boolean)
+    Controller-->>Client: 200 OK / 오류 응답
+```
+
+---
+
 ## 참고 사항
 
 - 모든 다이어그램은 Mermaid 형식으로 작성되었습니다.
@@ -1128,5 +1301,5 @@ graph TB
 
 ---
 
-*최종 업데이트: 2025-11-04*
+*최종 업데이트: 2025-11-10*
 

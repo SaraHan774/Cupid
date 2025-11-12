@@ -16,9 +16,12 @@ import java.util.*
  * 채널 관리 컨트롤러
  * 채팅방 관리 API
  */
-@Tag(name = "Channel", description = "채널 관리 API - 채널 조회/생성/나가기 및 멤버 관리")
+@Tag(
+    name = "Chat - Channel",
+    description = "채팅 서비스 전용 채널 관리 API (/api/v1/chat/channels) - 채널 조회/생성/나가기 및 멤버 관리"
+)
 @RestController
-@RequestMapping("/api/v1/channels")
+@RequestMapping("/api/v1/chat/channels")
 class ChannelController(
     private val channelService: ChannelService
 ) {
@@ -40,7 +43,7 @@ class ChannelController(
 
     /**
      * 채널 목록 조회
-     * GET /api/v1/channels
+     * GET /api/v1/chat/channels
      */
     @Operation(summary = "채널 목록 조회", description = "사용자가 참여 중인 채널 목록을 조회합니다")
     @GetMapping
@@ -84,7 +87,7 @@ class ChannelController(
 
     /**
      * 채널 상세 정보 조회
-     * GET /api/v1/channels/{channelId}
+     * GET /api/v1/chat/channels/{channelId}
      */
     @Operation(summary = "채널 상세 조회", description = "특정 채널의 상세 정보를 조회합니다")
     @GetMapping("/{channelId}")
@@ -119,7 +122,7 @@ class ChannelController(
 
     /**
      * 채널 생성
-     * POST /api/v1/channels
+     * POST /api/v1/chat/channels
      */
     @Operation(summary = "채널 생성", description = "새로운 채널을 생성합니다 (1:1 또는 그룹)")
     @PostMapping
@@ -162,7 +165,7 @@ class ChannelController(
 
     /**
      * 채널 나가기
-     * DELETE /api/v1/channels/{channelId}/leave
+     * DELETE /api/v1/chat/channels/{channelId}/leave
      */
     @Operation(summary = "채널 나가기", description = "참여 중인 채널에서 나갑니다")
     @DeleteMapping("/{channelId}/leave")
@@ -207,7 +210,7 @@ class ChannelController(
 
     /**
      * 채널 멤버 목록 조회
-     * GET /api/v1/channels/{channelId}/members
+     * GET /api/v1/chat/channels/{channelId}/members
      */
     @Operation(summary = "채널 멤버 조회", description = "채널의 멤버 목록을 조회합니다")
     @GetMapping("/{channelId}/members")
@@ -242,7 +245,7 @@ class ChannelController(
 
     /**
      * 채널에 사용자 초대
-     * POST /api/v1/channels/{channelId}/members
+     * POST /api/v1/chat/channels/{channelId}/members
      */
     @Operation(summary = "채널 멤버 추가", description = "채널에 새로운 사용자를 초대합니다")
     @PostMapping("/{channelId}/members")

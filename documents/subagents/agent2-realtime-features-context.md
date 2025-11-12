@@ -7,7 +7,7 @@
 
 ## 📋 프로젝트 개요
 
-**프로젝트명**: Cupid - 레즈비언 소개팅 앱 채팅 SDK  
+**프로젝트명**: Cupid - 소개팅 앱 채팅 SDK  
 **기술 스택**: Kotlin + Spring Boot 3.5.7  
 **실시간 통신**: WebSocket (STOMP over SockJS)  
 **캐시/상태**: Redis  

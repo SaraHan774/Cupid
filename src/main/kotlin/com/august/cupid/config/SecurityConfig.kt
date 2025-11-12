@@ -59,6 +59,8 @@ class SecurityConfig(
                         "/v3/api-docs/**",          // OpenAPI 문서
                         "/error"
                     ).permitAll()
+                    // 채팅 서비스 API는 JWT 인증 필요 (React Native 클라이언트 전용)
+                    .requestMatchers("/api/v1/chat/**").authenticated()
                     // WebSocket 엔드포인트
                     .requestMatchers("/ws").permitAll()
                     // 나머지 모든 요청은 인증 필요

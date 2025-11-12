@@ -7,7 +7,7 @@
 
 ## 📋 프로젝트 개요
 
-**프로젝트명**: Cupid - 레즈비언 소개팅 앱 채팅 SDK  
+**프로젝트명**: Cupid - 소개팅 앱 채팅 SDK  
 **기술 스택**: Kotlin + Spring Boot 3.5.7  
 **데이터베이스**: PostgreSQL (관계형 데이터), MongoDB (메시지), Redis (캐시/실시간 상태)  
 **현재 단계**: Phase 1 MVP 완성을 위한 기능 보완

@@ -52,6 +52,12 @@ jwt:
   expiration: 86400000 # 24시간 (밀리초)
   refresh-expiration: 604800000 # 7일 (밀리초)
 
+services:
+  auth:
+    base-path: /api/v1/auth # 인증 서비스 기본 경로 (React Native 클라이언트 참고용)
+  chat:
+    base-path: /api/v1/chat # 채팅 서비스 기본 경로 (React Native 클라이언트 참고용)
+
 # Rate Limiting 설정 (테스트용으로 완화)
 rate-limit:
   enabled: true

@@ -23,9 +23,12 @@ import java.util.*
  * 메시지 관리 컨트롤러
  * HTTP REST API로 메시지 관리
  */
-@Tag(name = "Message", description = "메시지 관리 API - 메시지 조회/전송/수정/삭제 및 읽음 표시")
+@Tag(
+    name = "Chat - Message",
+    description = "채팅 서비스 전용 메시지 관리 API (/api/v1/chat) - 메시지 조회/전송/수정/삭제 및 읽음 표시"
+)
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping("/api/v1/chat")
 class MessageController(
     private val messageService: MessageService,
     private val messagingTemplate: SimpMessagingTemplate,
@@ -51,7 +54,7 @@ class MessageController(
 
     /**
      * 채널의 메시지 목록 조회
-     * GET /api/v1/channels/{channelId}/messages
+     * GET /api/v1/chat/channels/{channelId}/messages
      */
     @Operation(
         summary = "메시지 목록 조회",
@@ -100,7 +103,7 @@ class MessageController(
 
     /**
      * 메시지 전송 (HTTP)
-     * POST /api/v1/channels/{channelId}/messages
+     * POST /api/v1/chat/channels/{channelId}/messages
      */
     @Operation(
         summary = "메시지 전송",
@@ -160,7 +163,7 @@ class MessageController(
 
     /**
      * 메시지 수정
-     * PUT /api/v1/messages/{messageId}
+     * PUT /api/v1/chat/messages/{messageId}
      */
     @Operation(
         summary = "메시지 수정",
@@ -209,7 +212,7 @@ class MessageController(
 
     /**
      * 메시지 삭제
-     * DELETE /api/v1/messages/{messageId}
+     * DELETE /api/v1/chat/messages/{messageId}
      */
     @Operation(
         summary = "메시지 삭제",
@@ -256,7 +259,7 @@ class MessageController(
 
     /**
      * 읽음 표시
-     * POST /api/v1/messages/{messageId}/read
+     * POST /api/v1/chat/messages/{messageId}/read
      */
     @Operation(
         summary = "읽음 표시",
@@ -303,7 +306,7 @@ class MessageController(
 
     /**
      * 읽지 않은 메시지 수 조회
-     * GET /api/v1/channels/{channelId}/unread-count
+     * GET /api/v1/chat/channels/{channelId}/unread-count
      */
     @Operation(
         summary = "읽지 않은 메시지 수 조회",
@@ -354,7 +357,7 @@ class MessageController(
 
     /**
      * 메시지 읽음 표시 (개선된 버전)
-     * POST /api/v1/channels/{channelId}/messages/{messageId}/read
+     * POST /api/v1/chat/channels/{channelId}/messages/{messageId}/read
      *
      * 기능:
      * - MongoDB에 읽음 표시 저장
@@ -445,7 +448,7 @@ class MessageController(
 
     /**
      * 배치 읽음 표시
-     * POST /api/v1/channels/{channelId}/messages/read-batch
+     * POST /api/v1/chat/channels/{channelId}/messages/read-batch
      *
      * 기능:
      * - 여러 메시지를 한 번에 읽음 처리
@@ -508,7 +511,7 @@ class MessageController(
 
     /**
      * 메시지 읽음 수 조회
-     * GET /api/v1/messages/{messageId}/read-count
+     * GET /api/v1/chat/messages/{messageId}/read-count
      *
      * 기능:
      * - 메시지를 읽은 사람 수 조회
@@ -561,7 +564,7 @@ class MessageController(
 
     /**
      * 채널 읽지 않은 수 조회 (개선된 버전)
-     * GET /api/v1/channels/{channelId}/unread
+     * GET /api/v1/chat/channels/{channelId}/unread
      *
      * 기능:
      * - Redis 캐시 활용한 빠른 조회
@@ -614,7 +617,7 @@ class MessageController(
 
     /**
      * 전체 읽지 않은 수 조회
-     * GET /api/v1/messages/unread/total
+     * GET /api/v1/chat/messages/unread/total
      *
      * 기능:
      * - 모든 채널의 읽지 않은 메시지 총합
