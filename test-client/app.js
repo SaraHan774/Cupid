@@ -87,10 +87,14 @@ function showAuthTab(tab) {
     document.querySelectorAll('.form').forEach(form => form.classList.remove('active'));
     
     if (tab === 'login') {
-        event.target.classList.add('active');
+        // 로그인 탭 버튼 활성화
+        const loginBtn = document.querySelector('.tab-btn');
+        if (loginBtn) loginBtn.classList.add('active');
         document.getElementById('loginForm').classList.add('active');
     } else {
-        event.target.classList.add('active');
+        // 회원가입 탭 버튼 활성화
+        const registerBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.textContent.includes('회원가입'));
+        if (registerBtn) registerBtn.classList.add('active');
         document.getElementById('registerForm').classList.add('active');
     }
 }
@@ -135,7 +139,7 @@ async function register() {
             alert('회원가입 성공! 이제 로그인해주세요.');
             document.getElementById('registerError').textContent = '';
             // 로그인 탭으로 전환
-            showTab('login');
+            showAuthTab('login');
         } else {
             document.getElementById('registerError').textContent = data.error || data.message || '회원가입 실패';
         }

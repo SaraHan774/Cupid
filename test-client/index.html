@@ -5,6 +5,57 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cupid Chat - 종합 API 테스트</title>
     <link rel="stylesheet" href="styles.css">
+    <!-- Live Server 무한 새로고침 방지 스크립트 (가장 먼저 로드) -->
+    <script>
+    // Live Server의 무한 새로고침 방지
+    (function() {
+        // Live Reload WebSocket 연결 차단 (우리 앱의 WebSocket은 허용)
+        const originalWebSocket = window.WebSocket;
+        window.WebSocket = function(url, protocols) {
+            // Live Server의 WebSocket 연결만 차단
+            if (url && (url.includes('livereload') || 
+                       (url.includes('127.0.0.1:5500') && url.includes('ws') && !url.includes('localhost:8080')))) {
+                console.log('Live Reload WebSocket 연결 차단됨:', url);
+                return {
+                    close: function() {},
+                    send: function() {},
+                    addEventListener: function() {},
+                    removeEventListener: function() {}
+                };
+            }
+            return new originalWebSocket(url, protocols);
+        };
+        
+        // 페이지 새로고침 방지
+        let reloadBlocked = false;
+        const originalReload = window.location.reload;
+        window.location.reload = function(forcedReload) {
+            if (reloadBlocked) {
+                console.log('페이지 새로고침 차단됨 (Live Reload 방지)');
+                return;
+            }
+            return originalReload.call(window.location, forcedReload);
+        };
+        
+        // Live Reload 스크립트 제거 함수
+        function removeLiveReloadScripts() {
+            const scripts = document.querySelectorAll('script');
+            scripts.forEach(script => {
+                if (script.textContent && 
+                    (script.textContent.includes('refreshCSS') || 
+                     script.textContent.includes('livereload') ||
+                     (script.textContent.includes('WebSocket') && script.textContent.includes('reload')))) {
+                    console.log('Live Reload 스크립트 제거됨');
+                    script.remove();
+                }
+            });
+        }
+        
+        // 즉시 실행 및 주기적 체크
+        removeLiveReloadScripts();
+        setInterval(removeLiveReloadScripts, 1000);
+    })();
+    </script>
 </head>
 <body>
     <!-- 헤더 -->
@@ -200,6 +251,29 @@
                         </div>
                         <div id="channelApiResult" class="result-box"></div>
                     </section>
+
+                    <!-- Firebase 푸시 알림 테스트 -->
+                    <section class="test-section">
+                        <h3>🔔 Firebase 푸시 알림 테스트</h3>
+                        <p class="section-helper">
+                            아래 단계는 Firebase Cloud Messaging 동작을 웹 브라우저에서 검증하기 위한 절차입니다.
+                            firebase-config.js 파일에 실제 Firebase 프로젝트 정보를 입력한 후 진행해야 합니다.
+                        </p>
+                        <div class="test-controls">
+                            <button id="notificationPermissionBtn">브라우저 알림 권한 요청</button>
+                            <button id="notificationRegisterBtn">FCM 토큰 발급 및 서버 등록</button>
+                            <button id="notificationListBtn">서버에 등록된 토큰 조회</button>
+                        </div>
+                        <div class="test-controls">
+                            <input type="text" id="notificationDeviceName" placeholder="디바이스 이름 (선택 입력)" />
+                            <input type="text" id="notificationAppVersion" placeholder="앱 버전 (선택 입력)" />
+                        </div>
+                        <div class="test-controls">
+                            <button id="notificationDeleteBtn">현재 브라우저 토큰 삭제</button>
+                            <button id="notificationTestBtn">테스트 알림 전송</button>
+                        </div>
+                        <div id="notificationResult" class="result-box"></div>
+                    </section>
                 </div>
             </div>
         </div>
@@ -227,6 +301,11 @@
         </div>
     </div>
 
+    <!-- Firebase SDK 로드 (푸시 알림 테스트용) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+    <script src="firebase-config.js"></script>
+
     <!-- WebSocket 라이브러리 로드 -->
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
@@ -234,5 +313,6 @@
     <!-- 메인 스크립트 -->
     <script src="app.js"></script>
     <script src="encryption-test.js"></script>
+    <script src="notification-test.js"></script>
 </body>
 </html>

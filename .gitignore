@@ -42,6 +42,8 @@ out/
 ### Firebase ###
 **/firebase-service-account.json
 !src/main/resources/firebase-service-account.example.json
+# 테스트 클라이언트 Firebase 설정 파일 (민감 정보)
+test-client/firebase-config.js
 
 ### Log Files ###
 *.log
@@ -60,3 +62,4 @@ SECURITY_REVIEW/.DS_Store
 src/main/resources/firebase-service-account.json
 .cursor/
 .claude/
+**/firebase-service-account.json
