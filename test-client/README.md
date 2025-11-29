@@ -20,9 +20,39 @@ cd /Users/gahee/IdeaProjects/Cupid
 ./gradlew bootRun
 ```
 
-서버는 `http://localhost:8080`에서 실행됩니다.
+## 환경 설정
 
-### 2. 테스트 클라이언트 실행
+### 1. 설정 파일 생성
+
+처음 사용하는 경우, `config.example.js`를 복사하여 `config.js`를 생성하세요:
+
+```bash
+cd test-client
+cp config.example.js config.js
+```
+
+### 2. 환경 선택
+
+`config.js` 파일을 열어서 환경을 설정하세요:
+
+**로컬 개발 환경 사용** (기본값):
+```javascript
+const USE_PRODUCTION = false;  // 로컬 개발 서버 사용
+```
+
+**프로덕션 환경 사용**:
+```javascript
+const USE_PRODUCTION = true;   // 프로덕션 서버 사용
+// PRODUCTION_CONFIG에 실제 프로덕션 URL을 입력하세요
+```
+
+로컬 개발 URL:
+- API: `http://localhost:8080/api/v1`
+- WebSocket: `ws://localhost:8080/ws`
+
+**참고**: 서버는 `http://localhost:8080`에서 실행됩니다.
+
+## 테스트 클라이언트 실행
 
 ```bash
 cd test-client

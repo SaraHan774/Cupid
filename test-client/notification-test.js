@@ -1,6 +1,13 @@
 // Firebase Cloud Messaging 알림 테스트 스크립트
 // FCM 토큰 등록, 조회, 삭제 및 푸시 알림 수신 기능을 제공합니다.
 
+// API_BASE는 config.js와 app.js에서 정의됨 (전역 변수)
+// 만약 정의되지 않았다면 기본값 사용 (로컬 개발 환경)
+if (typeof window.API_BASE === 'undefined') {
+    window.API_BASE = 'http://localhost:8080/api/v1';
+}
+const API_BASE = window.API_BASE;
+
 // 전역 변수
 let messaging = null;
 let currentFcmToken = null;
