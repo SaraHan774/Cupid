@@ -5,7 +5,6 @@ import com.august.cupid.model.entity.Message
 import com.august.cupid.model.entity.MessageStatus
 import com.august.cupid.model.entity.MessageType
 import com.august.cupid.model.entity.FileMetadata
-import com.august.cupid.model.entity.EditHistory
 import com.august.cupid.repository.MessageRepository
 import com.august.cupid.repository.MessageReadsRepository
 import com.august.cupid.repository.ChannelMembersRepository
@@ -195,19 +194,19 @@ class MessageService(
                 return ApiResponse(false, message = "삭제된 메시지는 수정할 수 없습니다")
             }
 
-            // 수정 이력 추가
-            val editHistory = EditHistory(
-                encryptedContent = message.encryptedContent,
-                editedAt = LocalDateTime.now()
+            // 메시지 내용 업데이트 (이전 내용은 수정 이력에 저장됨)
+            val updated = messageRepository.updateMessageContent(
+                messageId = messageId,
+                newEncryptedContent = newContent,
+                previousContent = message.encryptedContent
             )
 
-            // 메시지 내용 업데이트
-            messageRepository.updateMessageContent(messageId, newContent, LocalDateTime.now(), editHistory)
+            if (!updated) {
+                return ApiResponse(false, message = "메시지 업데이트에 실패했습니다")
+            }
 
             // 업데이트된 메시지 조회
             val updatedMessage = messageRepository.findById(messageId).orElse(message)
-            // Message는 data class이므로 새 인스턴스 생성 필요
-            // 실제로는 별도의 업데이트 메서드가 필요할 수 있음
 
             logger.info("메시지 수정 완료: ${message.id}")
 
@@ -239,7 +238,11 @@ class MessageService(
             }
 
             // 메시지 삭제 (soft delete)
-            messageRepository.deleteMessage(messageId, LocalDateTime.now(), LocalDateTime.now())
+            val deleted = messageRepository.softDeleteMessage(messageId)
+
+            if (!deleted) {
+                return ApiResponse(false, message = "메시지 삭제에 실패했습니다")
+            }
 
             logger.info("메시지 삭제 완료: ${message.id}")
 
