@@ -9,32 +9,20 @@ import io.mockk.*
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.junit.jupiter.MockitoExtension
 import org.springframework.security.crypto.password.PasswordEncoder
 import java.time.LocalDateTime
 import java.util.*
-import io.mockk.junit5.MockKExtension
 
 /**
  * AuthService 단위 테스트
  * 인증 관련 비즈니스 로직 테스트
  */
-@ExtendWith(MockKExtension::class)
 class AuthServiceTest {
 
-    @MockK
     private lateinit var userRepository: UserRepository
-
-    @MockK
     private lateinit var passwordEncoder: PasswordEncoder
-
-    @MockK
     private lateinit var jwtUtil: JwtUtil
-
-    @MockK
     private lateinit var tokenBlacklistService: TokenBlacklistService
-
     private lateinit var authService: AuthService
 
     private val testUserId = UUID.randomUUID()
@@ -45,6 +33,11 @@ class AuthServiceTest {
 
     @BeforeEach
     fun setUp() {
+        userRepository = mockk<UserRepository>()
+        passwordEncoder = mockk<PasswordEncoder>()
+        jwtUtil = mockk<JwtUtil>()
+        tokenBlacklistService = mockk<TokenBlacklistService>()
+
         authService = AuthService(
             userRepository,
             passwordEncoder,

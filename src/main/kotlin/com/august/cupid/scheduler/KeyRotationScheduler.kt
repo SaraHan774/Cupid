@@ -469,7 +469,7 @@ class KeyRotationScheduler(
                     logger.info("수동 One-Time Pre-Keys 보충 완료: userId={}, keysAdded={}",
                         targetUserId, keysAdded)
                     
-                } catch (e: Exception) {
+                } catch (e: Exception) { 
                     failureCount++
                     logger.error("수동 One-Time Pre-Keys 보충 실패: userId={}", targetUserId, e)
                     

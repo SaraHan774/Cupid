@@ -71,10 +71,19 @@ class ChannelServiceTest {
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
         )
+        val user2 = User(
+            id = UUID.randomUUID(),
+            username = "user2",
+            email = "user2@example.com",
+            passwordHash = "hash",
+            isActive = true,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
         val match = Match(
             id = testMatchId,
-            user1Id = testUserId,
-            user2Id = UUID.randomUUID(),
+            user1 = user,
+            user2 = user2,
             matchedAt = LocalDateTime.now()
         )
         val savedChannel = Channel(
@@ -103,8 +112,9 @@ class ChannelServiceTest {
         assertThat(result.data?.id).isEqualTo(testChannelId)
         assertThat(result.data?.type).isEqualTo("DIRECT")
         assertThat(result.data?.matchId).isEqualTo(testMatchId)
+        assertThat(result.message).contains("채널이 성공적으로 생성되었습니다")
         verify(exactly = 1) { userRepository.findById(testUserId) }
-        verify(exactly = 1) { matchRepository.findById(testMatchId) }
+        verify(exactly = 2) { matchRepository.findById(testMatchId) } // 52번 라인과 65번 라인에서 각각 호출
         verify(exactly = 1) { channelRepository.existsByMatchId(testMatchId) }
         verify(exactly = 1) { channelRepository.save(any()) }
         verify(exactly = 1) { channelMembersRepository.save(any<ChannelMembers>()) }
@@ -175,10 +185,19 @@ class ChannelServiceTest {
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
         )
+        val user2 = User(
+            id = UUID.randomUUID(),
+            username = "user2",
+            email = "user2@example.com",
+            passwordHash = "hash",
+            isActive = true,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
         val match = Match(
             id = testMatchId,
-            user1Id = testUserId,
-            user2Id = UUID.randomUUID(),
+            user1 = user,
+            user2 = user2,
             matchedAt = LocalDateTime.now()
         )
 
@@ -370,8 +389,27 @@ class ChannelServiceTest {
         // Given: 테스트 데이터 준비 및 Mock 설정
         val newUserId = UUID.randomUUID()
         val inviterId = testUserId
+        val channel = Channel(
+            id = testChannelId,
+            type = ChannelType.GROUP,
+            name = "테스트 채널",
+            creator = mockk<User>(relaxed = true),
+            match = null,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
+        val newUser = User(
+            id = newUserId,
+            username = "newuser",
+            email = "new@example.com",
+            passwordHash = "hash",
+            isActive = true,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
 
-        every { channelRepository.findById(testChannelId) } returns Optional.of(mockk<Channel>(relaxed = true))
+        every { channelRepository.findById(testChannelId) } returns Optional.of(channel)
+        every { userRepository.findById(newUserId) } returns Optional.of(newUser)
         every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, inviterId) } returns null
 
         // When: 테스트 대상 메서드 실행
@@ -381,8 +419,10 @@ class ChannelServiceTest {
         assertThat(result.success).isFalse()
         assertThat(result.message).contains("채널에 초대할 권한이 없습니다")
         verify(exactly = 1) { channelRepository.findById(testChannelId) }
+        verify(exactly = 1) { userRepository.findById(newUserId) }
         verify(exactly = 1) { channelMembersRepository.findByChannelIdAndUserId(testChannelId, inviterId) }
         verify(exactly = 0) { channelMembersRepository.save(any<ChannelMembers>()) }
+        verify(exactly = 0) { channelRepository.save(any()) }
     }
 }
 

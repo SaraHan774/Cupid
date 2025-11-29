@@ -37,7 +37,7 @@ class MessageServiceTest {
 
     @BeforeEach
     fun setUp() {
-        messageRepository = mockk<MessageRepository>()
+        messageRepository = mockk<MessageRepository>(relaxed = true)
         messageReadsRepository = mockk<MessageReadsRepository>()
         channelMembersRepository = mockk<ChannelMembersRepository>()
         userRepository = mockk<UserRepository>()
@@ -90,7 +90,7 @@ class MessageServiceTest {
         every { userRepository.findById(testUserId) } returns Optional.of(user)
         every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns channelMembers
         every { messageRepository.save(any()) } returns savedMessage
-        every { messagingTemplate.convertAndSend(any<String>(), any()) } just Runs
+        every { messagingTemplate.convertAndSend(any<String>(), any<Any>()) } just Runs
 
         // When: 테스트 대상 메서드 실행
         val result = messageService.sendMessage(sendMessageRequest, testUserId)
@@ -105,7 +105,7 @@ class MessageServiceTest {
         verify(exactly = 1) { userRepository.findById(testUserId) }
         verify(exactly = 1) { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) }
         verify(exactly = 1) { messageRepository.save(any()) }
-        verify(exactly = 1) { messagingTemplate.convertAndSend("/topic/channel/$testChannelId", any()) }
+        verify(exactly = 1) { messagingTemplate.convertAndSend("/topic/channel/$testChannelId", any<Any>()) }
     }
 
     @Test
@@ -139,7 +139,7 @@ class MessageServiceTest {
         verify(exactly = 1) { userRepository.findById(testUserId) }
         verify(exactly = 1) { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) }
         verify(exactly = 0) { messageRepository.save(any()) }
-        verify(exactly = 0) { messagingTemplate.convertAndSend(any<String>(), any()) }
+        verify(exactly = 0) { messagingTemplate.convertAndSend(any<String>(), any<Any>()) }
     }
 
     @Test
@@ -226,16 +226,10 @@ class MessageServiceTest {
             updatedAt = LocalDateTime.now()
         )
 
-        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
-        every {
-            messageRepository.updateMessageContent(
-                testMessageId,
-                newContent,
-                any(),
-                any<EditHistory>()
-            )
-        } returns null
-        every { messageRepository.findById(testMessageId) } returns Optional.of(updatedMessage)
+        every { messageRepository.findById(testMessageId) } returnsMany listOf(
+            Optional.of(message),
+            Optional.of(updatedMessage)
+        )
 
         // When: 테스트 대상 메서드 실행
         val result = messageService.editMessage(testMessageId, newContent, testUserId)
@@ -299,13 +293,6 @@ class MessageServiceTest {
         )
 
         every { messageRepository.findById(testMessageId) } returns Optional.of(message)
-        every {
-            messageRepository.deleteMessage(
-                testMessageId,
-                any<LocalDateTime>(),
-                any<LocalDateTime>()
-            )
-        } returns null
 
         // When: 테스트 대상 메서드 실행
         val result = messageService.deleteMessage(testMessageId, testUserId)
