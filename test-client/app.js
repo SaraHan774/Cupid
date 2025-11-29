@@ -11,12 +11,15 @@ window.addEventListener('DOMContentLoaded', function() {
     restoreSession();
 });
 
-// API Base URL (로컬 개발 서버)
-const API_BASE = 'http://localhost:8080/api/v1';
-const WS_BASE = 'http://localhost:8080/ws';  // WebSocket 엔드포인트 (/ws/chat이 아닌 /ws)
+// API Base URL 설정
+// config.js에서 환경에 따라 자동으로 설정됩니다
+// 프로덕션/로컬 환경 전환은 config.js의 USE_PRODUCTION 변수를 변경하세요
+const API_BASE = window.API_BASE || 'http://localhost:8080/api/v1';
+const WS_BASE = window.WS_BASE || 'ws://localhost:8080/ws';  // WebSocket 엔드포인트 (/ws/chat이 아닌 /ws)
 
 // 전역 스코프에 노출 (encryption-test.js에서 사용)
 window.API_BASE = API_BASE;
+window.WS_BASE = WS_BASE;
 
 // 세션 저장
 function saveSession() {

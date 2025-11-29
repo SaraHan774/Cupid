@@ -20,7 +20,29 @@ cd /Users/gahee/IdeaProjects/Cupid
 ./gradlew bootRun
 ```
 
-서버는 `http://localhost:8080`에서 실행됩니다.
+## 환경 설정
+
+### 프로덕션 환경 사용
+
+기본적으로 프로덕션 환경(ALB)을 사용하도록 설정되어 있습니다.
+
+프로덕션 URL:
+- API: `http://cupid-alb-378055256.us-east-1.elb.amazonaws.com/api/v1`
+- WebSocket: `ws://cupid-alb-378055256.us-east-1.elb.amazonaws.com/ws`
+
+### 로컬 개발 환경 사용
+
+로컬 개발 서버를 사용하려면 `config.js` 파일을 열어서 다음을 변경하세요:
+
+```javascript
+const USE_PRODUCTION = false;  // true → false로 변경
+```
+
+로컬 개발 URL:
+- API: `http://localhost:8080/api/v1`
+- WebSocket: `ws://localhost:8080/ws`
+
+**참고**: 서버는 `http://localhost:8080`에서 실행됩니다.
 
 ### 2. 테스트 클라이언트 실행
 

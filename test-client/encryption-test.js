@@ -2,8 +2,8 @@
 // 암호화 API 테스트 함수들
 // ============================================
 
-// API_BASE와 accessToken은 app.js에서 정의됨 (전역 변수)
-// 만약 정의되지 않았다면 기본값 사용
+// API_BASE와 accessToken은 config.js와 app.js에서 정의됨 (전역 변수)
+// 만약 정의되지 않았다면 기본값 사용 (로컬 개발 환경)
 if (typeof window.API_BASE === 'undefined') {
     window.API_BASE = 'http://localhost:8080/api/v1';
 }
