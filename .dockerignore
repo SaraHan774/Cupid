@@ -1,58 +1,70 @@
 # Build artifacts
 build/
-out/
-target/
-*.class
+.gradle/
 *.jar
 *.war
 *.ear
 
-# IDE
+# IDE files
 .idea/
 .vscode/
 *.iml
 *.ipr
 *.iws
-
-# Gradle
-.gradle/
-gradle-wrapper.jar
+.settings/
+.classpath
+.project
 
 # Logs
-*.log
 logs/
+*.log
+*.log.*
+*.log.*.gz
+boot.log
+detailed_log.log
 server.log
 server_debug.log
-detailed_log.log
 
-# Test files
-test-websocket-connection.sh
-debug-websocket.sh
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
 
 # Documentation
 docs-archive/
 *.md
 !README.md
 
-# Git
-.git/
-.gitignore
-
-# OS
-.DS_Store
-Thumbs.db
+# Test files
+test-client/
+test_all_endpoints.py
+test-websocket-connection.sh
+debug-websocket.sh
 
 # Docker
 docker-compose.yml
 Dockerfile
 .dockerignore
 
-# Environment
+# Environment files
 .env
-*.properties
-!application.properties
-!application-test.properties
+.env.local
+.env.*.local
 
-# Firebase (should not be in Docker image in production)
-firebase-service-account.json
-firebase-test.json
+# Uploads (local storage)
+uploads/
+
+# Firebase credentials (will be provided via Secrets Manager)
+**/firebase-service-account.json
+
+# Deployment scripts (not needed in container)
+deployment/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
