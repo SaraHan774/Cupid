@@ -5,8 +5,12 @@ import com.august.cupid.service.EncryptionMetricsService
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.web.bind.MethodArgumentNotValidException
+import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 
 /**
  * 전역 예외 처리기
@@ -249,13 +253,263 @@ class GlobalExceptionHandler(
         return cause ?: throwable
     }
 
+    // ============================================
+    // 비즈니스 예외 처리
+    // ============================================
+
+    /**
+     * 비즈니스 예외 처리 (기본 클래스)
+     */
+    @ExceptionHandler(BusinessException::class)
+    fun handleBusinessException(e: BusinessException): ResponseEntity<ApiResponse<Nothing>> {
+        logger.warn("비즈니스 예외 발생: ${e.errorCode} - ${e.message}")
+
+        return ResponseEntity.status(e.httpStatus).body(ApiResponse(
+            success = false,
+            error = e.message,
+            errorCode = e.errorCode
+        ))
+    }
+
+    /**
+     * 인증되지 않은 요청 예외 처리
+     */
+    @ExceptionHandler(UnauthorizedException::class)
+    fun handleUnauthorizedException(e: UnauthorizedException): ResponseEntity<ApiResponse<Nothing>> {
+        logger.warn("인증 실패: ${e.message}")
+
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse(
+            success = false,
+            error = e.message,
+            errorCode = e.errorCode
+        ))
+    }
+
+    /**
+     * 접근 권한 없음 예외 처리
+     */
+    @ExceptionHandler(AccessDeniedException::class)
+    fun handleAccessDeniedException(e: AccessDeniedException): ResponseEntity<ApiResponse<Nothing>> {
+        logger.warn("접근 거부: ${e.message}, resourceType=${e.resourceType}, resourceId=${e.resourceId}")
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiResponse(
+            success = false,
+            error = e.message,
+            errorCode = e.errorCode
+        ))
+    }
+
+    /**
+     * 리소스를 찾을 수 없음 예외 처리
+     */
+    @ExceptionHandler(ResourceNotFoundException::class)
+    fun handleResourceNotFoundException(e: ResourceNotFoundException): ResponseEntity<ApiResponse<Nothing>> {
+        logger.debug("리소스를 찾을 수 없음: ${e.resourceType}, id=${e.resourceId}")
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse(
+            success = false,
+            error = e.message,
+            errorCode = e.errorCode
+        ))
+    }
+
+    /**
+     * 사용자를 찾을 수 없음 예외 처리
+     */
+    @ExceptionHandler(UserNotFoundException::class)
+    fun handleUserNotFoundException(e: UserNotFoundException): ResponseEntity<ApiResponse<Nothing>> {
+        logger.debug("사용자를 찾을 수 없음: ${e.message}")
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse(
+            success = false,
+            error = e.message,
+            errorCode = e.errorCode
+        ))
+    }
+
+    /**
+     * 채널을 찾을 수 없음 예외 처리
+     */
+    @ExceptionHandler(ChannelNotFoundException::class)
+    fun handleChannelNotFoundException(e: ChannelNotFoundException): ResponseEntity<ApiResponse<Nothing>> {
+        logger.debug("채널을 찾을 수 없음: ${e.message}")
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse(
+            success = false,
+            error = e.message,
+            errorCode = e.errorCode
+        ))
+    }
+
+    /**
+     * 채널 접근 권한 없음 예외 처리
+     */
+    @ExceptionHandler(ChannelAccessDeniedException::class)
+    fun handleChannelAccessDeniedException(e: ChannelAccessDeniedException): ResponseEntity<ApiResponse<Nothing>> {
+        logger.warn("채널 접근 거부: ${e.message}")
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiResponse(
+            success = false,
+            error = e.message,
+            errorCode = e.errorCode
+        ))
+    }
+
+    /**
+     * 메시지를 찾을 수 없음 예외 처리
+     */
+    @ExceptionHandler(MessageNotFoundException::class)
+    fun handleMessageNotFoundException(e: MessageNotFoundException): ResponseEntity<ApiResponse<Nothing>> {
+        logger.debug("메시지를 찾을 수 없음: ${e.message}")
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse(
+            success = false,
+            error = e.message,
+            errorCode = e.errorCode
+        ))
+    }
+
+    /**
+     * 메시지 권한 없음 예외 처리
+     */
+    @ExceptionHandler(MessageAccessDeniedException::class)
+    fun handleMessageAccessDeniedException(e: MessageAccessDeniedException): ResponseEntity<ApiResponse<Nothing>> {
+        logger.warn("메시지 접근 거부: ${e.message}")
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiResponse(
+            success = false,
+            error = e.message,
+            errorCode = e.errorCode
+        ))
+    }
+
+    /**
+     * 잘못된 요청 예외 처리
+     */
+    @ExceptionHandler(BadRequestException::class)
+    fun handleBadRequestException(e: BadRequestException): ResponseEntity<ApiResponse<Nothing>> {
+        logger.warn("잘못된 요청: ${e.message}, field=${e.field}")
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse(
+            success = false,
+            error = e.message,
+            errorCode = e.errorCode
+        ))
+    }
+
+    /**
+     * 중복 리소스 예외 처리
+     */
+    @ExceptionHandler(DuplicateResourceException::class)
+    fun handleDuplicateResourceException(e: DuplicateResourceException): ResponseEntity<ApiResponse<Nothing>> {
+        logger.warn("중복 리소스: ${e.message}, type=${e.resourceType}, field=${e.field}")
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse(
+            success = false,
+            error = e.message,
+            errorCode = e.errorCode
+        ))
+    }
+
+    /**
+     * 인증 실패 예외 처리
+     */
+    @ExceptionHandler(AuthenticationFailedException::class)
+    fun handleAuthenticationFailedException(e: AuthenticationFailedException): ResponseEntity<ApiResponse<Nothing>> {
+        logger.warn("인증 실패: ${e.message}")
+
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse(
+            success = false,
+            error = e.message,
+            errorCode = e.errorCode
+        ))
+    }
+
+    /**
+     * 유효하지 않은 토큰 예외 처리
+     */
+    @ExceptionHandler(InvalidTokenException::class)
+    fun handleInvalidTokenException(e: InvalidTokenException): ResponseEntity<ApiResponse<Nothing>> {
+        logger.warn("유효하지 않은 토큰: ${e.message}")
+
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse(
+            success = false,
+            error = e.message,
+            errorCode = e.errorCode
+        ))
+    }
+
+    // ============================================
+    // 검증 및 입력 오류 처리
+    // ============================================
+
+    /**
+     * @Valid 어노테이션 검증 실패 처리
+     */
+    @ExceptionHandler(MethodArgumentNotValidException::class)
+    fun handleValidationException(e: MethodArgumentNotValidException): ResponseEntity<ApiResponse<Nothing>> {
+        val errors = e.bindingResult.fieldErrors.map { "${it.field}: ${it.defaultMessage}" }
+        logger.warn("입력값 검증 실패: ${errors.joinToString(", ")}")
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse(
+            success = false,
+            error = "입력값 검증에 실패했습니다",
+            errorCode = "VALIDATION_ERROR",
+            validationErrors = errors
+        ))
+    }
+
+    /**
+     * 요청 파라미터 타입 불일치 처리 (예: UUID 파싱 실패)
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException::class)
+    fun handleTypeMismatchException(e: MethodArgumentTypeMismatchException): ResponseEntity<ApiResponse<Nothing>> {
+        val message = "잘못된 파라미터 형식: ${e.name}"
+        logger.warn("타입 불일치: ${e.name} = ${e.value}, 예상 타입: ${e.requiredType?.simpleName}")
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse(
+            success = false,
+            error = message,
+            errorCode = "INVALID_PARAMETER_TYPE"
+        ))
+    }
+
+    /**
+     * 필수 파라미터 누락 처리
+     */
+    @ExceptionHandler(MissingServletRequestParameterException::class)
+    fun handleMissingParameterException(e: MissingServletRequestParameterException): ResponseEntity<ApiResponse<Nothing>> {
+        val message = "필수 파라미터가 누락되었습니다: ${e.parameterName}"
+        logger.warn("필수 파라미터 누락: ${e.parameterName}")
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse(
+            success = false,
+            error = message,
+            errorCode = "MISSING_PARAMETER"
+        ))
+    }
+
+    /**
+     * JSON 파싱 오류 처리
+     */
+    @ExceptionHandler(HttpMessageNotReadableException::class)
+    fun handleHttpMessageNotReadableException(e: HttpMessageNotReadableException): ResponseEntity<ApiResponse<Nothing>> {
+        logger.warn("요청 본문 파싱 오류: ${e.message}")
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse(
+            success = false,
+            error = "요청 본문을 파싱할 수 없습니다",
+            errorCode = "INVALID_REQUEST_BODY"
+        ))
+    }
+
     /**
      * 일반적인 IllegalArgumentException 처리 (비밀번호 강도 검증 등)
      */
     @ExceptionHandler(IllegalArgumentException::class)
     fun handleIllegalArgumentException(e: IllegalArgumentException): ResponseEntity<ApiResponse<Nothing>> {
         logger.warn("잘못된 입력: ${e.message}")
-        
+
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse(
             success = false,
             error = e.message ?: "잘못된 입력입니다.",
