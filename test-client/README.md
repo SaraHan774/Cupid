@@ -22,20 +22,28 @@ cd /Users/gahee/IdeaProjects/Cupid
 
 ## 환경 설정
 
-### 프로덕션 환경 사용
+### 1. 설정 파일 생성
 
-기본적으로 프로덕션 환경(ALB)을 사용하도록 설정되어 있습니다.
+처음 사용하는 경우, `config.example.js`를 복사하여 `config.js`를 생성하세요:
 
-프로덕션 URL:
-- API: `http://cupid-alb-378055256.us-east-1.elb.amazonaws.com/api/v1`
-- WebSocket: `ws://cupid-alb-378055256.us-east-1.elb.amazonaws.com/ws`
+```bash
+cd test-client
+cp config.example.js config.js
+```
 
-### 로컬 개발 환경 사용
+### 2. 환경 선택
 
-로컬 개발 서버를 사용하려면 `config.js` 파일을 열어서 다음을 변경하세요:
+`config.js` 파일을 열어서 환경을 설정하세요:
 
+**로컬 개발 환경 사용** (기본값):
 ```javascript
-const USE_PRODUCTION = false;  // true → false로 변경
+const USE_PRODUCTION = false;  // 로컬 개발 서버 사용
+```
+
+**프로덕션 환경 사용**:
+```javascript
+const USE_PRODUCTION = true;   // 프로덕션 서버 사용
+// PRODUCTION_CONFIG에 실제 프로덕션 URL을 입력하세요
 ```
 
 로컬 개발 URL:
@@ -44,7 +52,7 @@ const USE_PRODUCTION = false;  // true → false로 변경
 
 **참고**: 서버는 `http://localhost:8080`에서 실행됩니다.
 
-### 2. 테스트 클라이언트 실행
+## 테스트 클라이언트 실행
 
 ```bash
 cd test-client
