@@ -14,9 +14,11 @@ import java.util.*
 /**
  * 메시지 Repository (MongoDB)
  * E2E 암호화된 메시지 데이터 관리
+ *
+ * 참고: 업데이트 작업은 MessageRepositoryCustom 인터페이스를 통해 MongoTemplate으로 처리
  */
 @Repository
-interface MessageRepository : MongoRepository<Message, UUID> {
+interface MessageRepository : MongoRepository<Message, UUID>, MessageRepositoryCustom {
 
     /**
      * 채널 ID로 메시지들 조회 (페이징, 삭제되지 않은 메시지만)
@@ -89,28 +91,10 @@ interface MessageRepository : MongoRepository<Message, UUID> {
         status: MessageStatus
     ): Long
 
-    /**
-     * 메시지 상태 업데이트
-     */
-    @Query("{ 'id': ?0 }, { '\$set': { 'status': ?1, 'updatedAt': ?2 } }")
-    fun updateMessageStatus(messageId: UUID, status: MessageStatus, updatedAt: LocalDateTime): Void
-
-    /**
-     * 메시지 삭제 (soft delete)
-     */
-    @Query("{ 'id': ?0 }, { '\$set': { 'status': 'DELETED', 'deletedAt': ?1, 'updatedAt': ?2 } }")
-    fun deleteMessage(messageId: UUID, deletedAt: LocalDateTime, updatedAt: LocalDateTime): Void
-
-    /**
-     * 메시지 내용 업데이트 (수정)
-     */
-    @Query("{ 'id': ?0 }, { '\$set': { 'encryptedContent': ?1, 'updatedAt': ?2 }, '\$push': { 'editHistory': ?3 } }")
-    fun updateMessageContent(
-        messageId: UUID, 
-        encryptedContent: String, 
-        updatedAt: LocalDateTime, 
-        editHistory: com.august.cupid.model.entity.EditHistory
-    ): Void
+    // 업데이트 메서드들은 MessageRepositoryCustom 인터페이스에서 정의됨
+    // - updateMessageStatus(messageId, status): Boolean
+    // - softDeleteMessage(messageId): Boolean
+    // - updateMessageContent(messageId, newContent, previousContent): Boolean
 
     /**
      * 채널의 모든 메시지 삭제

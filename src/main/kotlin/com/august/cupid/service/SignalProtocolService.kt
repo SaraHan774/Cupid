@@ -15,6 +15,7 @@ import org.whispersystems.libsignal.protocol.SignalMessage
 import org.whispersystems.libsignal.protocol.CiphertextMessage
 import org.whispersystems.libsignal.util.KeyHelper
 import org.whispersystems.libsignal.ecc.Curve
+import org.whispersystems.libsignal.ecc.ECKeyPair
 import java.time.LocalDateTime
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -208,6 +209,22 @@ class SignalProtocolService(
                 encryptionMetricsService.incrementKeyGenerationCount(mapOf("user_id" to userId.toString()))
                 
                 result
+            } catch (e: IllegalArgumentException) {
+                // 잘못된 입력 (비밀번호 강도 부족 등)은 그대로 전파
+                logger.warn("키 생성 실패 (잘못된 입력): ${e.message}")
+                val executionTime = (System.nanoTime() - startTime) / 1_000_000
+                securityAuditLogger.logKeyGeneration(
+                    userId = userId,
+                    success = false,
+                    executionTimeMs = executionTime,
+                    errorMessage = e.message
+                )
+                encryptionMetricsService.incrementErrorCount(
+                    errorType = e.javaClass.simpleName,
+                    operation = "generate",
+                    tags = mapOf("user_id" to userId.toString())
+                )
+                throw e
             } catch (e: Exception) {
                 logger.error("키 생성 실패: ${e.message}", e)
                 val executionTime = (System.nanoTime() - startTime) / 1_000_000
@@ -217,14 +234,14 @@ class SignalProtocolService(
                     executionTimeMs = executionTime,
                     errorMessage = e.message
                 )
-                
+
                 // 에러 메트릭 기록
                 encryptionMetricsService.incrementErrorCount(
                     errorType = e.javaClass.simpleName,
                     operation = "generate",
                     tags = mapOf("user_id" to userId.toString())
                 )
-                
+
                 throw SecurityException("Signal Protocol 키 생성 중 오류가 발생했습니다", e)
             }
         }
@@ -833,6 +850,9 @@ class SignalProtocolService(
                 password
             )
 
+            // 4.5. 기존 signed pre-key 비활성화
+            signalSignedPreKeyRepository.deactivateAll(userId)
+
             // 5. DB에 저장
             val signedPreKeyEntity = SignalSignedPreKey(
                 userId = userId,
@@ -1062,7 +1082,7 @@ class SignalProtocolService(
             Curve.decodePrivatePoint(privateKeyBytes)
         )
 
-        return InMemorySignalProtocolStore(identityKeyPair, userKeys.registrationId)
+        return InMemorySignalProtocolStore(userId, identityKeyPair, userKeys.registrationId, password)
     }
 
     /**
@@ -1134,11 +1154,15 @@ class SignalProtocolService(
      * In-memory SignalProtocolStore (simplified for session management)
      */
     private inner class InMemorySignalProtocolStore(
+        private val userId: UUID,
         private val identityKeyPair: IdentityKeyPair,
-        private val registrationId: Int
+        private val registrationId: Int,
+        private val password: String
     ) : SignalProtocolStore {
 
         private val sessions = mutableMapOf<SignalProtocolAddress, SessionRecord>()
+        private val preKeys = mutableMapOf<Int, PreKeyRecord>()
+        private val signedPreKeys = mutableMapOf<Int, SignedPreKeyRecord>()
 
         override fun getIdentityKeyPair() = identityKeyPair
         override fun getLocalRegistrationId() = registrationId
@@ -1148,28 +1172,125 @@ class SignalProtocolService(
         override fun getIdentity(address: SignalProtocolAddress): IdentityKey? = null
 
         override fun loadPreKey(preKeyId: Int): PreKeyRecord {
-            throw UnsupportedOperationException("Use database for pre-keys")
+            // Check cache first
+            preKeys[preKeyId]?.let { return it }
+
+            // Load from database
+            val dbPreKey = signalPreKeyRepository.findByUserIdAndPreKeyId(userId, preKeyId)
+                ?: throw InvalidKeyIdException("Pre-key $preKeyId not found for user $userId")
+
+            // Decrypt private key
+            val privateKeyBytes = keyEncryptionUtil.decryptPrivateKey(dbPreKey.privateKeyEncrypted, password)
+            val publicKeyBytes = Base64.getDecoder().decode(dbPreKey.publicKey)
+
+            val keyPair = ECKeyPair(
+                Curve.decodePoint(publicKeyBytes, 0),
+                Curve.decodePrivatePoint(privateKeyBytes)
+            )
+
+            val record = PreKeyRecord(preKeyId, keyPair)
+            preKeys[preKeyId] = record
+            return record
         }
-        override fun storePreKey(preKeyId: Int, record: PreKeyRecord) {}
-        override fun containsPreKey(preKeyId: Int) = false
-        override fun removePreKey(preKeyId: Int) {}
+
+        override fun storePreKey(preKeyId: Int, record: PreKeyRecord) {
+            preKeys[preKeyId] = record
+        }
+
+        override fun containsPreKey(preKeyId: Int): Boolean {
+            if (preKeys.containsKey(preKeyId)) return true
+            return signalPreKeyRepository.findByUserIdAndPreKeyId(userId, preKeyId) != null
+        }
+
+        override fun removePreKey(preKeyId: Int) {
+            preKeys.remove(preKeyId)
+        }
 
         override fun loadSignedPreKey(signedPreKeyId: Int): SignedPreKeyRecord {
-            throw UnsupportedOperationException("Use database for signed pre-keys")
-        }
-        override fun loadSignedPreKeys(): List<SignedPreKeyRecord> = emptyList()
-        override fun storeSignedPreKey(signedPreKeyId: Int, record: SignedPreKeyRecord) {}
-        override fun containsSignedPreKey(signedPreKeyId: Int) = false
-        override fun removeSignedPreKey(signedPreKeyId: Int) {}
+            // Check cache first
+            signedPreKeys[signedPreKeyId]?.let { return it }
 
-        override fun loadSession(address: SignalProtocolAddress) = sessions.getOrPut(address) { SessionRecord() }
+            // Load from database
+            val dbSignedPreKey = signalSignedPreKeyRepository.findByUserIdAndSignedPreKeyId(userId, signedPreKeyId)
+                ?: throw InvalidKeyIdException("Signed pre-key $signedPreKeyId not found for user $userId")
+
+            // Decrypt private key
+            val privateKeyBytes = keyEncryptionUtil.decryptPrivateKey(dbSignedPreKey.privateKeyEncrypted, password)
+            val publicKeyBytes = Base64.getDecoder().decode(dbSignedPreKey.publicKey)
+            val signatureBytes = Base64.getDecoder().decode(dbSignedPreKey.signature)
+
+            val keyPair = ECKeyPair(
+                Curve.decodePoint(publicKeyBytes, 0),
+                Curve.decodePrivatePoint(privateKeyBytes)
+            )
+
+            val record = SignedPreKeyRecord(signedPreKeyId, dbSignedPreKey.timestamp, keyPair, signatureBytes)
+            signedPreKeys[signedPreKeyId] = record
+            return record
+        }
+
+        override fun loadSignedPreKeys(): List<SignedPreKeyRecord> {
+            val dbKeys = signalSignedPreKeyRepository.findByUserId(userId)
+            return dbKeys.map { dbKey ->
+                val privateKeyBytes = keyEncryptionUtil.decryptPrivateKey(dbKey.privateKeyEncrypted, password)
+                val publicKeyBytes = Base64.getDecoder().decode(dbKey.publicKey)
+                val signatureBytes = Base64.getDecoder().decode(dbKey.signature)
+
+                val keyPair = ECKeyPair(
+                    Curve.decodePoint(publicKeyBytes, 0),
+                    Curve.decodePrivatePoint(privateKeyBytes)
+                )
+
+                SignedPreKeyRecord(dbKey.signedPreKeyId, dbKey.timestamp, keyPair, signatureBytes)
+            }
+        }
+
+        override fun storeSignedPreKey(signedPreKeyId: Int, record: SignedPreKeyRecord) {
+            signedPreKeys[signedPreKeyId] = record
+        }
+
+        override fun containsSignedPreKey(signedPreKeyId: Int): Boolean {
+            if (signedPreKeys.containsKey(signedPreKeyId)) return true
+            return signalSignedPreKeyRepository.findByUserIdAndSignedPreKeyId(userId, signedPreKeyId) != null
+        }
+
+        override fun removeSignedPreKey(signedPreKeyId: Int) {
+            signedPreKeys.remove(signedPreKeyId)
+        }
+
+        override fun loadSession(address: SignalProtocolAddress): SessionRecord {
+            // First check in-memory cache
+            sessions[address]?.let { return it }
+
+            // Load from database
+            val dbSession = signalSessionRepository.findByUserIdAndAddressNameAndAddressDeviceId(
+                userId, address.name, address.deviceId
+            )
+            if (dbSession != null) {
+                val sessionRecord = SessionRecord(Base64.getDecoder().decode(dbSession.sessionRecord))
+                sessions[address] = sessionRecord
+                return sessionRecord
+            }
+
+            // Create new session if not found
+            val newSession = SessionRecord()
+            sessions[address] = newSession
+            return newSession
+        }
         override fun getSubDeviceSessions(name: String) = emptyList<Int>()
         override fun storeSession(address: SignalProtocolAddress, record: SessionRecord) {
             sessions[address] = record
         }
         override fun containsSession(address: SignalProtocolAddress): Boolean {
+            // First check in-memory cache
             val session = sessions[address]
-            return session != null && session.sessionState?.hasSenderChain() == true
+            if (session != null && session.sessionState?.hasSenderChain() == true) {
+                return true
+            }
+            // If not in memory, check database
+            return signalSessionRepository.findByUserIdAndAddressNameAndAddressDeviceId(
+                userId, address.name, address.deviceId
+            ) != null
         }
         override fun deleteSession(address: SignalProtocolAddress) { sessions.remove(address) }
         override fun deleteAllSessions(name: String) { sessions.keys.removeIf { it.name == name } }

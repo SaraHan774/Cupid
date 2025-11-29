@@ -158,15 +158,7 @@ class ChatController(
                 replyToMessageId = request.replyToMessageId
             )
 
-            val result = messageService.sendMessage(messageRequest, userId)
-            
-            if (!result.success || result.data == null) {
-                logger.error("메시지 저장 실패: ${result.message}")
-                sendErrorToUser(headerAccessor, "메시지를 저장할 수 없습니다: ${result.message}")
-                return
-            }
-
-            val savedMessage = result.data
+            val savedMessage = messageService.sendMessage(messageRequest, userId)
             logger.info("메시지 저장 완료: messageId={}", savedMessage.id)
 
             // 7. 암호화된 메시지를 각 수신자에게 브로드캐스트
