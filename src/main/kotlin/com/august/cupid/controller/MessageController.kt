@@ -1,56 +1,45 @@
 package com.august.cupid.controller
 
 import com.august.cupid.model.dto.*
+import com.august.cupid.model.entity.Message
+import com.august.cupid.security.CurrentUser
 import com.august.cupid.service.MessageService
-import com.august.cupid.service.OnlineStatusService
-import com.august.cupid.service.NotificationService
 import com.august.cupid.service.ReadReceiptService
 import io.swagger.v3.oas.annotations.Operation
-import io.swagger.v3.oas.annotations.media.Content
-import io.swagger.v3.oas.annotations.media.Schema
-import io.swagger.v3.oas.annotations.responses.ApiResponses
+import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.messaging.simp.SimpMessagingTemplate
-import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
 import java.util.*
 
 /**
  * 메시지 관리 컨트롤러
  * HTTP REST API로 메시지 관리
+ *
+ * 이 컨트롤러는 얇은 레이어로 설계되어 있습니다:
+ * - @CurrentUser로 인증된 사용자 ID 주입
+ * - 서비스 호출 및 응답 매핑
+ * - 예외는 GlobalExceptionHandler에서 처리
  */
 @Tag(
     name = "Chat - Message",
     description = "채팅 서비스 전용 메시지 관리 API (/api/v1/chat) - 메시지 조회/전송/수정/삭제 및 읽음 표시"
 )
+@SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/v1/chat")
 class MessageController(
     private val messageService: MessageService,
     private val messagingTemplate: SimpMessagingTemplate,
-    private val onlineStatusService: OnlineStatusService,
-    private val notificationService: NotificationService,
     private val readReceiptService: ReadReceiptService
 ) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
-
-    /**
-     * JWT에서 사용자 ID 추출
-     */
-    private fun getUserIdFromAuthentication(authentication: Authentication): UUID? {
-        return try {
-            val userIdString = authentication.name
-            UUID.fromString(userIdString)
-        } catch (e: Exception) {
-            logger.error("사용자 ID 추출 실패", e)
-            null
-        }
-    }
 
     /**
      * 채널의 메시지 목록 조회
@@ -62,43 +51,19 @@ class MessageController(
     )
     @GetMapping("/channels/{channelId}/messages")
     fun getChannelMessages(
-        authentication: Authentication,
-        @PathVariable channelId: String,
+        @CurrentUser userId: UUID,
+        @Parameter(description = "채널 ID") @PathVariable channelId: UUID,
         @RequestParam(required = false, defaultValue = "0") page: Int,
         @RequestParam(required = false, defaultValue = "50") size: Int
-    ): ResponseEntity<Map<String, Any>> {
-        val userId = getUserIdFromAuthentication(authentication)
-        if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(mapOf(
-                "success" to false,
-                "error" to "인증 정보를 찾을 수 없습니다"
-            ))
-        }
-        logger.info("메시지 목록 조회: userId={}, channelId={}, page={}, size={}", userId, channelId, page, size)
-        
-        return try {
-            val channelIdUuid = UUID.fromString(channelId)
-            
-            val result = messageService.getChannelMessages(channelIdUuid, userId, page, size)
-            
-            if (result.success) {
-                ResponseEntity.ok(mapOf(
-                    "success" to true,
-                    "messages" to (result.data ?: PagedResponse(emptyList(), 0, 0, 0, 0, false, false))
-                ))
-            } else {
-                ResponseEntity.status(HttpStatus.FORBIDDEN).body(mapOf(
-                    "success" to false,
-                    "error" to (result.message ?: "메시지 목록 조회 실패")
-                ))
-            }
-        } catch (e: Exception) {
-            logger.error("메시지 목록 조회 중 오류 발생: userId={}, channelId={}", userId, channelId, e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(mapOf(
-                "success" to false,
-                "error" to "서버 오류가 발생했습니다"
-            ))
-        }
+    ): ResponseEntity<ApiResponse<PagedResponse<MessageResponse>>> {
+        logger.debug("메시지 목록 조회: userId={}, channelId={}, page={}, size={}", userId, channelId, page, size)
+
+        val messages = messageService.getChannelMessages(channelId, userId, page, size)
+
+        return ResponseEntity.ok(ApiResponse(
+            success = true,
+            data = messages
+        ))
     }
 
     /**
@@ -111,54 +76,23 @@ class MessageController(
     )
     @PostMapping("/channels/{channelId}/messages")
     fun sendMessage(
-        authentication: Authentication,
-        @PathVariable channelId: String,
+        @CurrentUser userId: UUID,
+        @Parameter(description = "채널 ID") @PathVariable channelId: UUID,
         @Valid @RequestBody request: SendMessageRequest
-    ): ResponseEntity<Map<String, Any>> {
-        val userId = getUserIdFromAuthentication(authentication)
-        if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(mapOf(
-                "success" to false,
-                "error" to "인증 정보를 찾을 수 없습니다"
-            ))
-        }
-        logger.info("메시지 전송 요청 (HTTP): userId={}, channelId={}", userId, channelId)
-        
-        return try {
-            val channelIdUuid = UUID.fromString(channelId)
+    ): ResponseEntity<ApiResponse<MessageResponse>> {
+        logger.debug("메시지 전송 요청 (HTTP): userId={}, channelId={}", userId, channelId)
 
-            // channelId를 설정 (URL path variable이 우선, 없으면 request body에서 가져옴)
-            val finalChannelId = request.channelId ?: channelIdUuid
-            val messageRequest = request.copy(channelId = finalChannelId)
+        // channelId를 설정 (URL path variable이 우선)
+        val messageRequest = request.copy(channelId = channelId)
+        val savedMessage = messageService.sendMessage(messageRequest, userId)
 
-            // MessageService로 메시지 저장
-            val result = messageService.sendMessage(messageRequest, userId)
-            
-            if (!result.success || result.data == null) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf(
-                    "success" to false,
-                    "error" to (result.message ?: "메시지 전송 실패")
-                ))
-            }
+        logger.info("메시지 저장 완료: messageId={}", savedMessage.id)
 
-            val savedMessage = result.data
-            logger.info("메시지 저장 완료: messageId={}", savedMessage.id)
-
-            // 온라인 사용자에게 WebSocket 브로드캐스트는 ChatController에서 처리
-            // 여기서는 메시지 저장만 처리
-
-            ResponseEntity.status(HttpStatus.CREATED).body(mapOf(
-                "success" to true,
-                "message" to (result.message ?: "메시지가 전송되었습니다"),
-                "data" to savedMessage
-            ))
-        } catch (e: Exception) {
-            logger.error("메시지 전송 중 오류 발생: userId={}, channelId={}", userId, channelId, e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(mapOf(
-                "success" to false,
-                "error" to "서버 오류가 발생했습니다"
-            ))
-        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse(
+            success = true,
+            data = savedMessage.toResponse(),
+            message = "메시지가 전송되었습니다"
+        ))
     }
 
     /**
@@ -171,43 +105,19 @@ class MessageController(
     )
     @PutMapping("/messages/{messageId}")
     fun editMessage(
-        authentication: Authentication,
-        @RequestParam newContent: String,
-        @PathVariable messageId: String
-    ): ResponseEntity<Map<String, Any>> {
-        val userId = getUserIdFromAuthentication(authentication)
-        if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(mapOf(
-                "success" to false,
-                "error" to "인증 정보를 찾을 수 없습니다"
-            ))
-        }
-        logger.info("메시지 수정 요청: userId={}, messageId={}", userId, messageId)
-        
-        return try {
-            val messageIdUuid = UUID.fromString(messageId)
-            
-            val result = messageService.editMessage(messageIdUuid, newContent, userId)
-            
-            if (result.success && result.data != null) {
-                ResponseEntity.ok(mapOf(
-                    "success" to true,
-                    "message" to (result.message ?: "메시지가 수정되었습니다"),
-                    "data" to result.data
-                ))
-            } else {
-                ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf(
-                    "success" to false,
-                    "error" to (result.message ?: "메시지 수정 실패")
-                ))
-            }
-        } catch (e: Exception) {
-            logger.error("메시지 수정 중 오류 발생: userId={}, messageId={}", userId, messageId, e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(mapOf(
-                "success" to false,
-                "error" to "서버 오류가 발생했습니다"
-            ))
-        }
+        @CurrentUser userId: UUID,
+        @Parameter(description = "메시지 ID") @PathVariable messageId: UUID,
+        @RequestParam newContent: String
+    ): ResponseEntity<ApiResponse<MessageResponse>> {
+        logger.debug("메시지 수정 요청: userId={}, messageId={}", userId, messageId)
+
+        val updatedMessage = messageService.editMessage(messageId, newContent, userId)
+
+        return ResponseEntity.ok(ApiResponse(
+            success = true,
+            data = updatedMessage.toResponse(),
+            message = "메시지가 수정되었습니다"
+        ))
     }
 
     /**
@@ -220,41 +130,17 @@ class MessageController(
     )
     @DeleteMapping("/messages/{messageId}")
     fun deleteMessage(
-        authentication: Authentication,
-        @PathVariable messageId: String
-    ): ResponseEntity<Map<String, Any>> {
-        val userId = getUserIdFromAuthentication(authentication)
-        if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(mapOf(
-                "success" to false,
-                "error" to "인증 정보를 찾을 수 없습니다"
-            ))
-        }
-        logger.info("메시지 삭제 요청: userId={}, messageId={}", userId, messageId)
-        
-        return try {
-            val messageIdUuid = UUID.fromString(messageId)
-            
-            val result = messageService.deleteMessage(messageIdUuid, userId)
-            
-            if (result.success) {
-                ResponseEntity.ok(mapOf(
-                    "success" to true,
-                    "message" to (result.message ?: "메시지가 삭제되었습니다")
-                ))
-            } else {
-                ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf(
-                    "success" to false,
-                    "error" to (result.message ?: "메시지 삭제 실패")
-                ))
-            }
-        } catch (e: Exception) {
-            logger.error("메시지 삭제 중 오류 발생: userId={}, messageId={}", userId, messageId, e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(mapOf(
-                "success" to false,
-                "error" to "서버 오류가 발생했습니다"
-            ))
-        }
+        @CurrentUser userId: UUID,
+        @Parameter(description = "메시지 ID") @PathVariable messageId: UUID
+    ): ResponseEntity<ApiResponse<Nothing>> {
+        logger.debug("메시지 삭제 요청: userId={}, messageId={}", userId, messageId)
+
+        messageService.deleteMessage(messageId, userId)
+
+        return ResponseEntity.ok(ApiResponse(
+            success = true,
+            message = "메시지가 삭제되었습니다"
+        ))
     }
 
     /**
@@ -267,41 +153,19 @@ class MessageController(
     )
     @PostMapping("/messages/{messageId}/read")
     fun markAsRead(
-        authentication: Authentication,
-        @PathVariable messageId: String
-    ): ResponseEntity<Map<String, Any>> {
-        val userId = getUserIdFromAuthentication(authentication)
-        if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(mapOf(
-                "success" to false,
-                "error" to "인증 정보를 찾을 수 없습니다"
-            ))
-        }
-        logger.info("읽음 표시 요청: userId={}, messageId={}", userId, messageId)
-        
-        return try {
-            val messageIdUuid = UUID.fromString(messageId)
-            
-            val result = messageService.markMessageAsRead(messageIdUuid, userId)
-            
-            if (result.success) {
-                ResponseEntity.ok(mapOf(
-                    "success" to true,
-                    "message" to (result.message ?: "읽음 표시 완료")
-                ))
-            } else {
-                ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf(
-                    "success" to false,
-                    "error" to (result.message ?: "읽음 표시 실패")
-                ))
-            }
-        } catch (e: Exception) {
-            logger.error("읽음 표시 중 오류 발생: userId={}, messageId={}", userId, messageId, e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(mapOf(
-                "success" to false,
-                "error" to "서버 오류가 발생했습니다"
-            ))
-        }
+        @CurrentUser userId: UUID,
+        @Parameter(description = "메시지 ID") @PathVariable messageId: UUID
+    ): ResponseEntity<ApiResponse<Nothing>> {
+        logger.debug("읽음 표시 요청: userId={}, messageId={}", userId, messageId)
+
+        val alreadyRead = messageService.markMessageAsRead(messageId, userId)
+
+        val message = if (alreadyRead) "이미 읽음 표시가 되어 있습니다" else "읽음 표시 완료"
+
+        return ResponseEntity.ok(ApiResponse(
+            success = true,
+            message = message
+        ))
     }
 
     /**
@@ -314,41 +178,17 @@ class MessageController(
     )
     @GetMapping("/channels/{channelId}/unread-count")
     fun getUnreadCount(
-        authentication: Authentication,
-        @PathVariable channelId: String
-    ): ResponseEntity<Map<String, Any>> {
-        val userId = getUserIdFromAuthentication(authentication)
-        if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(mapOf(
-                "success" to false,
-                "error" to "인증 정보를 찾을 수 없습니다"
-            ))
-        }
-        logger.info("읽지 않은 메시지 수 조회: userId={}, channelId={}", userId, channelId)
+        @CurrentUser userId: UUID,
+        @Parameter(description = "채널 ID") @PathVariable channelId: UUID
+    ): ResponseEntity<ApiResponse<Long>> {
+        logger.debug("읽지 않은 메시지 수 조회: userId={}, channelId={}", userId, channelId)
 
-        return try {
-            val channelIdUuid = UUID.fromString(channelId)
+        val unreadCount = messageService.getUnreadMessageCount(channelId, userId)
 
-            val result = messageService.getUnreadMessageCount(channelIdUuid, userId)
-
-            if (result.success) {
-                ResponseEntity.ok(mapOf(
-                    "success" to true,
-                    "unreadCount" to (result.data ?: 0L)
-                ))
-            } else {
-                ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf(
-                    "success" to false,
-                    "error" to (result.message ?: "읽지 않은 메시지 수 조회 실패")
-                ))
-            }
-        } catch (e: Exception) {
-            logger.error("읽지 않은 메시지 수 조회 중 오류 발생: userId={}, channelId={}", userId, channelId, e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(mapOf(
-                "success" to false,
-                "error" to "서버 오류가 발생했습니다"
-            ))
-        }
+        return ResponseEntity.ok(ApiResponse(
+            success = true,
+            data = unreadCount
+        ))
     }
 
     // ============================================
@@ -370,89 +210,37 @@ class MessageController(
     )
     @PostMapping("/channels/{channelId}/messages/{messageId}/read")
     fun markMessageAsRead(
-        authentication: Authentication,
-        @PathVariable channelId: String,
-        @PathVariable messageId: String
-    ): ResponseEntity<Map<String, Any>> {
-        val userId = getUserIdFromAuthentication(authentication)
-        if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(mapOf(
-                "success" to false,
-                "error" to "인증 정보를 찾을 수 없습니다"
+        @CurrentUser userId: UUID,
+        @Parameter(description = "채널 ID") @PathVariable channelId: UUID,
+        @Parameter(description = "메시지 ID") @PathVariable messageId: UUID
+    ): ResponseEntity<ApiResponse<ReadReceiptResponse>> {
+        logger.debug("메시지 읽음 표시: userId={}, channelId={}, messageId={}", userId, channelId, messageId)
+
+        // ReadReceiptService로 읽음 표시 처리
+        val result = readReceiptService.markAsRead(messageId, userId, channelId)
+
+        if (!result.success || result.data == null) {
+            return ResponseEntity.badRequest().body(ApiResponse(
+                success = false,
+                error = result.message ?: "읽음 표시 실패"
             ))
         }
 
-        logger.info("메시지 읽음 표시: userId={}, channelId={}, messageId={}", userId, channelId, messageId)
+        val readReceipt = result.data
 
-        return try {
-            val channelIdUuid = UUID.fromString(channelId)
-            val messageIdUuid = UUID.fromString(messageId)
+        // WebSocket으로 발신자에게 읽음 알림 전송 (best effort)
+        sendReadReceiptNotification(messageId, channelId, userId, readReceipt)
 
-            // ReadReceiptService로 읽음 표시 처리
-            val result = readReceiptService.markAsRead(messageIdUuid, userId, channelIdUuid)
-
-            if (!result.success || result.data == null) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf(
-                    "success" to false,
-                    "error" to (result.message ?: "읽음 표시 실패")
-                ))
-            }
-
-            val readReceipt = result.data
-
-            // WebSocket으로 발신자에게 읽음 알림 전송
-            try {
-                // 메시지 발신자 ID 조회
-                val message = messageService.getMessageById(messageIdUuid, userId)
-                if (message.success && message.data != null) {
-                    val senderId = message.data.senderId
-
-                    // 발신자에게 읽음 이벤트 전송
-                    val readEvent = ReadReceiptEvent(
-                        messageId = messageIdUuid,
-                        channelId = channelIdUuid,
-                        userId = userId,
-                        readAt = readReceipt.readAt
-                    )
-
-                    messagingTemplate.convertAndSendToUser(
-                        senderId.toString(),
-                        "/queue/read-receipts",
-                        readEvent
-                    )
-
-                    logger.debug(
-                        "읽음 알림 전송: senderId={}, messageId={}, readerId={}",
-                        senderId, messageIdUuid, userId
-                    )
-                }
-            } catch (e: Exception) {
-                logger.warn("읽음 알림 전송 실패 (계속 진행): messageId={}", messageIdUuid, e)
-                // Best effort - 알림 실패해도 읽음 표시는 완료됨
-            }
-
-            ResponseEntity.ok(mapOf(
-                "success" to true,
-                "message" to "메시지 읽음 표시가 완료되었습니다",
-                "data" to readReceipt
-            ))
-
-        } catch (e: Exception) {
-            logger.error("메시지 읽음 표시 중 오류 발생: userId={}, messageId={}", userId, messageId, e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(mapOf(
-                "success" to false,
-                "error" to "서버 오류가 발생했습니다"
-            ))
-        }
+        return ResponseEntity.ok(ApiResponse(
+            success = true,
+            data = readReceipt,
+            message = "메시지 읽음 표시가 완료되었습니다"
+        ))
     }
 
     /**
      * 배치 읽음 표시
      * POST /api/v1/chat/channels/{channelId}/messages/read-batch
-     *
-     * 기능:
-     * - 여러 메시지를 한 번에 읽음 처리
-     * - 성능 최적화 (bulk insert)
      */
     @Operation(
         summary = "배치 읽음 표시",
@@ -460,62 +248,31 @@ class MessageController(
     )
     @PostMapping("/channels/{channelId}/messages/read-batch")
     fun markMultipleAsRead(
-        authentication: Authentication,
-        @PathVariable channelId: String,
+        @CurrentUser userId: UUID,
+        @Parameter(description = "채널 ID") @PathVariable channelId: UUID,
         @Valid @RequestBody request: BatchMarkAsReadRequest
-    ): ResponseEntity<Map<String, Any>> {
-        val userId = getUserIdFromAuthentication(authentication)
-        if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(mapOf(
-                "success" to false,
-                "error" to "인증 정보를 찾을 수 없습니다"
+    ): ResponseEntity<ApiResponse<BatchReadReceiptResponse>> {
+        logger.debug("배치 읽음 표시: userId={}, channelId={}, count={}", userId, channelId, request.messageIds.size)
+
+        val result = readReceiptService.markMultipleAsRead(request.messageIds, userId, channelId)
+
+        if (!result.success || result.data == null) {
+            return ResponseEntity.badRequest().body(ApiResponse(
+                success = false,
+                error = result.message ?: "배치 읽음 표시 실패"
             ))
         }
 
-        logger.info(
-            "배치 읽음 표시: userId={}, channelId={}, count={}",
-            userId, channelId, request.messageIds.size
-        )
-
-        return try {
-            val channelIdUuid = UUID.fromString(channelId)
-
-            // ReadReceiptService로 배치 읽음 처리
-            val result = readReceiptService.markMultipleAsRead(
-                request.messageIds,
-                userId,
-                channelIdUuid
-            )
-
-            if (!result.success || result.data == null) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf(
-                    "success" to false,
-                    "error" to (result.message ?: "배치 읽음 표시 실패")
-                ))
-            }
-
-            ResponseEntity.ok(mapOf(
-                "success" to true,
-                "message" to "배치 읽음 표시가 완료되었습니다",
-                "data" to result.data
-            ))
-
-        } catch (e: Exception) {
-            logger.error("배치 읽음 표시 중 오류 발생: userId={}, channelId={}", userId, channelId, e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(mapOf(
-                "success" to false,
-                "error" to "서버 오류가 발생했습니다"
-            ))
-        }
+        return ResponseEntity.ok(ApiResponse(
+            success = true,
+            data = result.data,
+            message = "배치 읽음 표시가 완료되었습니다"
+        ))
     }
 
     /**
      * 메시지 읽음 수 조회
      * GET /api/v1/chat/messages/{messageId}/read-count
-     *
-     * 기능:
-     * - 메시지를 읽은 사람 수 조회
-     * - 그룹 채팅에서 "읽은 사람 3명" 표시용
      */
     @Operation(
         summary = "메시지 읽음 수 조회",
@@ -523,52 +280,29 @@ class MessageController(
     )
     @GetMapping("/messages/{messageId}/read-count")
     fun getMessageReadCount(
-        authentication: Authentication,
-        @PathVariable messageId: String
-    ): ResponseEntity<Map<String, Any>> {
-        val userId = getUserIdFromAuthentication(authentication)
-        if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(mapOf(
-                "success" to false,
-                "error" to "인증 정보를 찾을 수 없습니다"
+        @CurrentUser userId: UUID,
+        @Parameter(description = "메시지 ID") @PathVariable messageId: UUID
+    ): ResponseEntity<ApiResponse<MessageReadCountResponse>> {
+        logger.debug("메시지 읽음 수 조회: userId={}, messageId={}", userId, messageId)
+
+        val result = readReceiptService.getMessageReadCount(messageId)
+
+        if (!result.success || result.data == null) {
+            return ResponseEntity.badRequest().body(ApiResponse(
+                success = false,
+                error = result.message ?: "읽음 수 조회 실패"
             ))
         }
 
-        logger.info("메시지 읽음 수 조회: userId={}, messageId={}", userId, messageId)
-
-        return try {
-            val messageIdUuid = UUID.fromString(messageId)
-
-            val result = readReceiptService.getMessageReadCount(messageIdUuid)
-
-            if (!result.success || result.data == null) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf(
-                    "success" to false,
-                    "error" to (result.message ?: "읽음 수 조회 실패")
-                ))
-            }
-
-            ResponseEntity.ok(mapOf(
-                "success" to true,
-                "data" to result.data
-            ))
-
-        } catch (e: Exception) {
-            logger.error("메시지 읽음 수 조회 중 오류 발생: userId={}, messageId={}", userId, messageId, e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(mapOf(
-                "success" to false,
-                "error" to "서버 오류가 발생했습니다"
-            ))
-        }
+        return ResponseEntity.ok(ApiResponse(
+            success = true,
+            data = result.data
+        ))
     }
 
     /**
      * 채널 읽지 않은 수 조회 (개선된 버전)
      * GET /api/v1/chat/channels/{channelId}/unread
-     *
-     * 기능:
-     * - Redis 캐시 활용한 빠른 조회
-     * - lastReadAt 정보 포함
      */
     @Operation(
         summary = "채널 읽지 않은 메시지 수 조회",
@@ -576,52 +310,29 @@ class MessageController(
     )
     @GetMapping("/channels/{channelId}/unread")
     fun getChannelUnreadCount(
-        authentication: Authentication,
-        @PathVariable channelId: String
-    ): ResponseEntity<Map<String, Any>> {
-        val userId = getUserIdFromAuthentication(authentication)
-        if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(mapOf(
-                "success" to false,
-                "error" to "인증 정보를 찾을 수 없습니다"
+        @CurrentUser userId: UUID,
+        @Parameter(description = "채널 ID") @PathVariable channelId: UUID
+    ): ResponseEntity<ApiResponse<UnreadCountResponse>> {
+        logger.debug("채널 읽지 않은 수 조회: userId={}, channelId={}", userId, channelId)
+
+        val result = readReceiptService.getUnreadMessageCount(channelId, userId)
+
+        if (!result.success || result.data == null) {
+            return ResponseEntity.badRequest().body(ApiResponse(
+                success = false,
+                error = result.message ?: "읽지 않은 수 조회 실패"
             ))
         }
 
-        logger.info("채널 읽지 않은 수 조회: userId={}, channelId={}", userId, channelId)
-
-        return try {
-            val channelIdUuid = UUID.fromString(channelId)
-
-            val result = readReceiptService.getUnreadMessageCount(channelIdUuid, userId)
-
-            if (!result.success || result.data == null) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf(
-                    "success" to false,
-                    "error" to (result.message ?: "읽지 않은 수 조회 실패")
-                ))
-            }
-
-            ResponseEntity.ok(mapOf(
-                "success" to true,
-                "data" to result.data
-            ))
-
-        } catch (e: Exception) {
-            logger.error("채널 읽지 않은 수 조회 중 오류 발생: userId={}, channelId={}", userId, channelId, e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(mapOf(
-                "success" to false,
-                "error" to "서버 오류가 발생했습니다"
-            ))
-        }
+        return ResponseEntity.ok(ApiResponse(
+            success = true,
+            data = result.data
+        ))
     }
 
     /**
      * 전체 읽지 않은 수 조회
      * GET /api/v1/chat/messages/unread/total
-     *
-     * 기능:
-     * - 모든 채널의 읽지 않은 메시지 총합
-     * - 앱 아이콘 배지 숫자용
      */
     @Operation(
         summary = "전체 읽지 않은 메시지 수 조회",
@@ -629,40 +340,85 @@ class MessageController(
     )
     @GetMapping("/messages/unread/total")
     fun getTotalUnreadCount(
-        authentication: Authentication
-    ): ResponseEntity<Map<String, Any>> {
-        val userId = getUserIdFromAuthentication(authentication)
-        if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(mapOf(
-                "success" to false,
-                "error" to "인증 정보를 찾을 수 없습니다"
+        @CurrentUser userId: UUID
+    ): ResponseEntity<ApiResponse<Long>> {
+        logger.debug("전체 읽지 않은 수 조회: userId={}", userId)
+
+        val result = readReceiptService.getTotalUnreadMessageCount(userId)
+
+        if (!result.success) {
+            return ResponseEntity.badRequest().body(ApiResponse(
+                success = false,
+                error = result.message ?: "전체 읽지 않은 수 조회 실패"
             ))
         }
 
-        logger.info("전체 읽지 않은 수 조회: userId={}", userId)
+        return ResponseEntity.ok(ApiResponse(
+            success = true,
+            data = result.data ?: 0L
+        ))
+    }
 
-        return try {
-            val result = readReceiptService.getTotalUnreadMessageCount(userId)
+    // ============================================
+    // Private Helper Methods
+    // ============================================
 
-            if (!result.success) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf(
-                    "success" to false,
-                    "error" to (result.message ?: "전체 읽지 않은 수 조회 실패")
-                ))
-            }
+    /**
+     * Message 엔티티를 MessageResponse DTO로 변환
+     */
+    private fun Message.toResponse(): MessageResponse {
+        return MessageResponse(
+            id = this.id,
+            channelId = this.channelId,
+            senderId = this.senderId,
+            encryptedContent = this.encryptedContent,
+            messageType = this.messageType.name,
+            fileMetadata = this.fileMetadata?.let { metadata ->
+                FileMetadataDto(
+                    fileName = metadata.fileName,
+                    fileSize = metadata.fileSize,
+                    mimeType = metadata.mimeType,
+                    fileUrl = metadata.encryptedFileUrl,
+                    thumbnailUrl = metadata.thumbnailUrl
+                )
+            },
+            replyToMessageId = null,
+            status = this.status.name,
+            createdAt = this.createdAt,
+            updatedAt = this.updatedAt
+        )
+    }
 
-            ResponseEntity.ok(mapOf(
-                "success" to true,
-                "totalUnreadCount" to (result.data ?: 0L)
-            ))
+    /**
+     * 읽음 알림을 WebSocket으로 전송 (best effort)
+     */
+    private fun sendReadReceiptNotification(
+        messageId: UUID,
+        channelId: UUID,
+        readerId: UUID,
+        readReceipt: ReadReceiptResponse
+    ) {
+        try {
+            val message = messageService.getMessageById(messageId, readerId)
+            val senderId = message.senderId
 
+            val readEvent = ReadReceiptEvent(
+                messageId = messageId,
+                channelId = channelId,
+                userId = readerId,
+                readAt = readReceipt.readAt
+            )
+
+            messagingTemplate.convertAndSendToUser(
+                senderId.toString(),
+                "/queue/read-receipts",
+                readEvent
+            )
+
+            logger.debug("읽음 알림 전송: senderId={}, messageId={}, readerId={}", senderId, messageId, readerId)
         } catch (e: Exception) {
-            logger.error("전체 읽지 않은 수 조회 중 오류 발생: userId={}", userId, e)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(mapOf(
-                "success" to false,
-                "error" to "서버 오류가 발생했습니다"
-            ))
+            logger.warn("읽음 알림 전송 실패 (계속 진행): messageId={}, error={}", messageId, e.message)
+            // Best effort - 알림 실패해도 읽음 표시는 완료됨
         }
     }
 }
-

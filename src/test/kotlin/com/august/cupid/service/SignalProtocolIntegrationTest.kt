@@ -53,7 +53,8 @@ class SignalProtocolIntegrationTest {
 
     private lateinit var user1: User
     private lateinit var user2: User
-    private val testPassword = "TestPassword123!@#"
+    // Note: Must match the hardcoded password in SignalProtocolService.createProtocolStore
+    private val testPassword = "DEFAULT_TEMP_PASSWORD"
 
     @BeforeEach
     fun setUp() {

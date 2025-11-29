@@ -1,18 +1,19 @@
 package com.august.cupid.service
 
+import com.august.cupid.exception.*
 import com.august.cupid.model.dto.*
 import com.august.cupid.model.entity.Message
+import com.august.cupid.model.entity.MessageReads
 import com.august.cupid.model.entity.MessageStatus
 import com.august.cupid.model.entity.MessageType
 import com.august.cupid.model.entity.FileMetadata
-import com.august.cupid.model.entity.EditHistory
 import com.august.cupid.repository.MessageRepository
 import com.august.cupid.repository.MessageReadsRepository
 import com.august.cupid.repository.ChannelMembersRepository
 import com.august.cupid.repository.UserRepository
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
-import org.springframework.data.domain.Pageable
+import org.springframework.messaging.simp.SimpMessagingTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -21,6 +22,9 @@ import java.util.*
 /**
  * 메시지 서비스
  * 메시지 관련 비즈니스 로직 처리
+ *
+ * 이 서비스는 도메인 객체를 반환하고, 오류 상황에서는 예외를 발생시킵니다.
+ * 예외는 GlobalExceptionHandler에서 일관된 API 응답으로 변환됩니다.
  */
 @Service
 @Transactional
@@ -29,341 +33,326 @@ class MessageService(
     private val messageReadsRepository: MessageReadsRepository,
     private val channelMembersRepository: ChannelMembersRepository,
     private val userRepository: UserRepository,
-    private val messagingTemplate: org.springframework.messaging.simp.SimpMessagingTemplate
+    private val messagingTemplate: SimpMessagingTemplate
 ) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
 
     /**
      * 메시지 전송
+     *
+     * @param request 메시지 전송 요청
+     * @param senderId 발신자 ID
+     * @return 저장된 메시지
+     * @throws BadRequestException 채널 ID가 없는 경우
+     * @throws UserNotFoundException 발신자를 찾을 수 없는 경우
+     * @throws ChannelAccessDeniedException 채널 접근 권한이 없는 경우
      */
-    fun sendMessage(request: SendMessageRequest, senderId: UUID): ApiResponse<MessageResponse> {
-        return try {
-            // channelId 검증
-            if (request.channelId == null) {
-                return ApiResponse(false, message = "채널 ID는 필수입니다")
-            }
+    fun sendMessage(request: SendMessageRequest, senderId: UUID): Message {
+        val channelId = request.channelId
+            ?: throw BadRequestException("채널 ID는 필수입니다", field = "channelId")
 
-            // 발신자 존재 확인
-            val sender = userRepository.findById(senderId).orElse(null)
-            if (sender == null) {
-                return ApiResponse(false, message = "발신자를 찾을 수 없습니다")
-            }
-
-            // 채널 멤버십 확인
-            val membership = channelMembersRepository.findByChannelIdAndUserId(request.channelId, senderId)
-            if (membership == null || !membership.isActive) {
-                return ApiResponse(false, message = "채널에 메시지를 보낼 권한이 없습니다")
-            }
-
-            // 답장 메시지 확인 (Message 엔티티에 replyToMessageId 필드가 없으므로 주석 처리)
-            // if (request.replyToMessageId != null) {
-            //     val replyMessage = messageRepository.findById(request.replyToMessageId).orElse(null)
-            //     if (replyMessage == null || replyMessage.channelId != request.channelId) {
-            //         return ApiResponse(false, message = "답장할 메시지를 찾을 수 없습니다")
-            //     }
-            // }
-
-            // 파일 메타데이터 변환
-            val fileMetadata = request.fileMetadata?.let { dto ->
-                FileMetadata(
-                    fileName = dto.fileName,
-                    fileSize = dto.fileSize,
-                    mimeType = dto.mimeType,
-                    encryptedFileUrl = dto.fileUrl, // fileUrl을 encryptedFileUrl로 매핑
-                    thumbnailUrl = dto.thumbnailUrl
-                )
-            }
-
-            // 메시지 생성
-            val message = Message(
-                channelId = request.channelId,
-                senderId = senderId,
-                encryptedContent = request.encryptedContent,
-                messageType = MessageType.valueOf(request.messageType.uppercase()),
-                fileMetadata = fileMetadata
-                // replyToMessageId 필드가 없으므로 제외
-            )
-
-            val savedMessage = messageRepository.save(message)
-
-            logger.info("메시지 전송 완료: ${savedMessage.id} -> 채널 ${savedMessage.channelId}")
-
-            // WebSocket으로 실시간 브로드캐스트
-            try {
-                val messageResponse = savedMessage.toResponse()
-                messagingTemplate.convertAndSend(
-                    "/topic/channel/${savedMessage.channelId}",
-                    messageResponse
-                )
-                logger.debug("WebSocket 브로드캐스트 완료: 채널 ${savedMessage.channelId}")
-            } catch (e: Exception) {
-                logger.error("WebSocket 브로드캐스트 실패: ${e.message}", e)
-                // 브로드캐스트 실패해도 메시지는 저장되었으므로 계속 진행
-            }
-
-            ApiResponse(true, data = savedMessage.toResponse(), message = "메시지가 성공적으로 전송되었습니다")
-        } catch (e: Exception) {
-            logger.error("메시지 전송 실패: ${e.message}", e)
-            ApiResponse(false, error = "메시지 전송 중 오류가 발생했습니다")
+        // 발신자 존재 확인
+        userRepository.findById(senderId).orElseThrow {
+            UserNotFoundException(userId = senderId)
         }
+
+        // 채널 멤버십 확인
+        val membership = channelMembersRepository.findByChannelIdAndUserId(channelId, senderId)
+        if (membership == null || !membership.isActive) {
+            throw ChannelAccessDeniedException(channelId, senderId)
+        }
+
+        // 파일 메타데이터 변환
+        val fileMetadata = request.fileMetadata?.let { dto ->
+            FileMetadata(
+                fileName = dto.fileName,
+                fileSize = dto.fileSize,
+                mimeType = dto.mimeType,
+                encryptedFileUrl = dto.fileUrl,
+                thumbnailUrl = dto.thumbnailUrl
+            )
+        }
+
+        // 메시지 생성
+        val message = Message(
+            channelId = channelId,
+            senderId = senderId,
+            encryptedContent = request.encryptedContent,
+            messageType = MessageType.valueOf(request.messageType.uppercase()),
+            fileMetadata = fileMetadata
+        )
+
+        val savedMessage = messageRepository.save(message)
+        logger.info("메시지 전송 완료: messageId={}, channelId={}", savedMessage.id, savedMessage.channelId)
+
+        // WebSocket으로 실시간 브로드캐스트 (best effort)
+        broadcastMessage(savedMessage)
+
+        return savedMessage
     }
 
     /**
      * 채널의 메시지 목록 조회
+     *
+     * @param channelId 채널 ID
+     * @param userId 요청 사용자 ID
+     * @param page 페이지 번호
+     * @param size 페이지 크기
+     * @return 페이징된 메시지 목록
+     * @throws ChannelAccessDeniedException 채널 접근 권한이 없는 경우
      */
     @Transactional(readOnly = true)
     fun getChannelMessages(
-        channelId: UUID, 
-        userId: UUID, 
-        page: Int = 0, 
+        channelId: UUID,
+        userId: UUID,
+        page: Int = 0,
         size: Int = 50
-    ): ApiResponse<PagedResponse<MessageResponse>> {
-        return try {
-            // 채널 멤버십 확인
-            val membership = channelMembersRepository.findByChannelIdAndUserId(channelId, userId)
-            if (membership == null || !membership.isActive) {
-                return ApiResponse(false, message = "채널에 접근할 권한이 없습니다")
-            }
+    ): PagedResponse<MessageResponse> {
+        validateChannelAccess(channelId, userId)
 
-            val pageable = PageRequest.of(page, size)
-            val messages = messageRepository.findByChannelIdAndStatusNotOrderByCreatedAtDesc(
-                channelId, 
-                MessageStatus.DELETED, 
-                pageable
-            )
-            
-            val messageResponses = messages.content.map { it.toResponse() }
-            val pagedResponse = PagedResponse(
-                content = messageResponses,
-                page = messages.number,
-                size = messages.size,
-                totalElements = messages.totalElements,
-                totalPages = messages.totalPages,
-                hasNext = messages.hasNext(),
-                hasPrevious = messages.hasPrevious()
-            )
+        val pageable = PageRequest.of(page, size)
+        val messages = messageRepository.findByChannelIdAndStatusNotOrderByCreatedAtDesc(
+            channelId,
+            MessageStatus.DELETED,
+            pageable
+        )
 
-            ApiResponse(true, data = pagedResponse)
-        } catch (e: Exception) {
-            logger.error("채널 메시지 목록 조회 실패: ${e.message}", e)
-            ApiResponse(false, error = "채널 메시지 목록 조회 중 오류가 발생했습니다")
-        }
+        return PagedResponse(
+            content = messages.content.map { it.toResponse() },
+            page = messages.number,
+            size = messages.size,
+            totalElements = messages.totalElements,
+            totalPages = messages.totalPages,
+            hasNext = messages.hasNext(),
+            hasPrevious = messages.hasPrevious()
+        )
     }
 
     /**
      * 메시지 ID로 조회
+     *
+     * @param messageId 메시지 ID
+     * @param userId 요청 사용자 ID
+     * @return 메시지
+     * @throws MessageNotFoundException 메시지를 찾을 수 없는 경우
+     * @throws ChannelAccessDeniedException 채널 접근 권한이 없는 경우
      */
     @Transactional(readOnly = true)
-    fun getMessageById(messageId: UUID, userId: UUID): ApiResponse<MessageResponse> {
-        return try {
-            val message = messageRepository.findById(messageId).orElse(null)
-            if (message == null) {
-                return ApiResponse(false, message = "메시지를 찾을 수 없습니다")
-            }
-
-            // 채널 멤버십 확인
-            val membership = channelMembersRepository.findByChannelIdAndUserId(message.channelId, userId)
-            if (membership == null || !membership.isActive) {
-                return ApiResponse(false, message = "메시지에 접근할 권한이 없습니다")
-            }
-
-            ApiResponse(true, data = message.toResponse())
-        } catch (e: Exception) {
-            logger.error("메시지 조회 실패: ${e.message}", e)
-            ApiResponse(false, error = "메시지 조회 중 오류가 발생했습니다")
+    fun getMessageById(messageId: UUID, userId: UUID): Message {
+        val message = messageRepository.findById(messageId).orElseThrow {
+            MessageNotFoundException(messageId)
         }
+
+        validateChannelAccess(message.channelId, userId)
+
+        return message
     }
 
     /**
      * 메시지 수정
+     *
+     * @param messageId 메시지 ID
+     * @param newContent 새 내용
+     * @param userId 요청 사용자 ID
+     * @return 수정된 메시지
+     * @throws MessageNotFoundException 메시지를 찾을 수 없는 경우
+     * @throws MessageAccessDeniedException 메시지 수정 권한이 없는 경우
+     * @throws BadRequestException 삭제된 메시지인 경우
      */
-    fun editMessage(messageId: UUID, newContent: String, userId: UUID): ApiResponse<MessageResponse> {
-        return try {
-            val message = messageRepository.findById(messageId).orElse(null)
-            if (message == null) {
-                return ApiResponse(false, message = "메시지를 찾을 수 없습니다")
-            }
-
-            // 발신자 확인
-            if (message.senderId != userId) {
-                return ApiResponse(false, message = "메시지를 수정할 권한이 없습니다")
-            }
-
-            // 삭제된 메시지는 수정 불가
-            if (message.status == MessageStatus.DELETED) {
-                return ApiResponse(false, message = "삭제된 메시지는 수정할 수 없습니다")
-            }
-
-            // 수정 이력 추가
-            val editHistory = EditHistory(
-                encryptedContent = message.encryptedContent,
-                editedAt = LocalDateTime.now()
-            )
-
-            // 메시지 내용 업데이트
-            messageRepository.updateMessageContent(messageId, newContent, LocalDateTime.now(), editHistory)
-
-            // 업데이트된 메시지 조회
-            val updatedMessage = messageRepository.findById(messageId).orElse(message)
-            // Message는 data class이므로 새 인스턴스 생성 필요
-            // 실제로는 별도의 업데이트 메서드가 필요할 수 있음
-
-            logger.info("메시지 수정 완료: ${message.id}")
-
-            ApiResponse(true, data = updatedMessage.toResponse(), message = "메시지가 성공적으로 수정되었습니다")
-        } catch (e: Exception) {
-            logger.error("메시지 수정 실패: ${e.message}", e)
-            ApiResponse(false, error = "메시지 수정 중 오류가 발생했습니다")
+    fun editMessage(messageId: UUID, newContent: String, userId: UUID): Message {
+        val message = messageRepository.findById(messageId).orElseThrow {
+            MessageNotFoundException(messageId)
         }
+
+        // 발신자 확인
+        if (message.senderId != userId) {
+            throw MessageAccessDeniedException("메시지를 수정할 권한이 없습니다")
+        }
+
+        // 삭제된 메시지는 수정 불가
+        if (message.status == MessageStatus.DELETED) {
+            throw BadRequestException("삭제된 메시지는 수정할 수 없습니다")
+        }
+
+        // 메시지 내용 업데이트
+        val updated = messageRepository.updateMessageContent(
+            messageId = messageId,
+            newEncryptedContent = newContent,
+            previousContent = message.encryptedContent
+        )
+
+        if (!updated) {
+            throw BadRequestException("메시지 업데이트에 실패했습니다")
+        }
+
+        logger.info("메시지 수정 완료: messageId={}", messageId)
+
+        return messageRepository.findById(messageId).orElse(message)
     }
 
     /**
-     * 메시지 삭제
+     * 메시지 삭제 (soft delete)
+     *
+     * @param messageId 메시지 ID
+     * @param userId 요청 사용자 ID
+     * @throws MessageNotFoundException 메시지를 찾을 수 없는 경우
+     * @throws MessageAccessDeniedException 메시지 삭제 권한이 없는 경우
+     * @throws BadRequestException 이미 삭제된 메시지인 경우
      */
-    fun deleteMessage(messageId: UUID, userId: UUID): ApiResponse<String> {
-        return try {
-            val message = messageRepository.findById(messageId).orElse(null)
-            if (message == null) {
-                return ApiResponse(false, message = "메시지를 찾을 수 없습니다")
-            }
-
-            // 발신자 확인
-            if (message.senderId != userId) {
-                return ApiResponse(false, message = "메시지를 삭제할 권한이 없습니다")
-            }
-
-            // 이미 삭제된 메시지
-            if (message.status == MessageStatus.DELETED) {
-                return ApiResponse(false, message = "이미 삭제된 메시지입니다")
-            }
-
-            // 메시지 삭제 (soft delete)
-            messageRepository.deleteMessage(messageId, LocalDateTime.now(), LocalDateTime.now())
-
-            logger.info("메시지 삭제 완료: ${message.id}")
-
-            ApiResponse(true, message = "메시지가 성공적으로 삭제되었습니다")
-        } catch (e: Exception) {
-            logger.error("메시지 삭제 실패: ${e.message}", e)
-            ApiResponse(false, error = "메시지 삭제 중 오류가 발생했습니다")
+    fun deleteMessage(messageId: UUID, userId: UUID) {
+        val message = messageRepository.findById(messageId).orElseThrow {
+            MessageNotFoundException(messageId)
         }
+
+        // 발신자 확인
+        if (message.senderId != userId) {
+            throw MessageAccessDeniedException("메시지를 삭제할 권한이 없습니다")
+        }
+
+        // 이미 삭제된 메시지
+        if (message.status == MessageStatus.DELETED) {
+            throw BadRequestException("이미 삭제된 메시지입니다")
+        }
+
+        // 메시지 삭제 (soft delete)
+        val deleted = messageRepository.softDeleteMessage(messageId)
+        if (!deleted) {
+            throw BadRequestException("메시지 삭제에 실패했습니다")
+        }
+
+        logger.info("메시지 삭제 완료: messageId={}", messageId)
     }
 
     /**
      * 메시지 읽음 표시
+     *
+     * @param messageId 메시지 ID
+     * @param userId 요청 사용자 ID
+     * @return 이미 읽음 표시가 있었는지 여부
+     * @throws MessageNotFoundException 메시지를 찾을 수 없는 경우
+     * @throws ChannelAccessDeniedException 채널 접근 권한이 없는 경우
      */
-    fun markMessageAsRead(messageId: UUID, userId: UUID): ApiResponse<String> {
-        return try {
-            val message = messageRepository.findById(messageId).orElse(null)
-            if (message == null) {
-                return ApiResponse(false, message = "메시지를 찾을 수 없습니다")
-            }
-
-            // 채널 멤버십 확인
-            val membership = channelMembersRepository.findByChannelIdAndUserId(message.channelId, userId)
-            if (membership == null || !membership.isActive) {
-                return ApiResponse(false, message = "메시지에 접근할 권한이 없습니다")
-            }
-
-            // 이미 읽음 표시가 있는지 확인
-            val existingRead = messageReadsRepository.findByMessageIdAndUserId(messageId, userId)
-            if (existingRead != null) {
-                return ApiResponse(true, message = "이미 읽음 표시가 되어 있습니다")
-            }
-
-            // 읽음 표시 생성
-            val messageRead = com.august.cupid.model.entity.MessageReads(
-                messageId = messageId,
-                channelId = message.channelId,
-                userId = userId,
-                readAt = LocalDateTime.now()
-            )
-            messageReadsRepository.save(messageRead)
-
-            logger.info("메시지 읽음 표시 완료: ${message.id} -> 사용자 ${userId}")
-
-            ApiResponse(true, message = "메시지 읽음 표시가 완료되었습니다")
-        } catch (e: Exception) {
-            logger.error("메시지 읽음 표시 실패: ${e.message}", e)
-            ApiResponse(false, error = "메시지 읽음 표시 중 오류가 발생했습니다")
+    fun markMessageAsRead(messageId: UUID, userId: UUID): Boolean {
+        val message = messageRepository.findById(messageId).orElseThrow {
+            MessageNotFoundException(messageId)
         }
+
+        validateChannelAccess(message.channelId, userId)
+
+        // 이미 읽음 표시가 있는지 확인
+        val existingRead = messageReadsRepository.findByMessageIdAndUserId(messageId, userId)
+        if (existingRead != null) {
+            return true // 이미 읽음
+        }
+
+        // 읽음 표시 생성
+        val messageRead = MessageReads(
+            messageId = messageId,
+            channelId = message.channelId,
+            userId = userId,
+            readAt = LocalDateTime.now()
+        )
+        messageReadsRepository.save(messageRead)
+
+        logger.debug("메시지 읽음 표시 완료: messageId={}, userId={}", messageId, userId)
+
+        return false // 새로 읽음 표시됨
     }
 
     /**
      * 채널의 읽지 않은 메시지 개수 조회
+     *
+     * @param channelId 채널 ID
+     * @param userId 요청 사용자 ID
+     * @return 읽지 않은 메시지 개수
+     * @throws ChannelAccessDeniedException 채널 접근 권한이 없는 경우
      */
     @Transactional(readOnly = true)
-    fun getUnreadMessageCount(channelId: UUID, userId: UUID): ApiResponse<Long> {
-        return try {
-            // 채널 멤버십 확인
-            val membership = channelMembersRepository.findByChannelIdAndUserId(channelId, userId)
-            if (membership == null || !membership.isActive) {
-                return ApiResponse(false, message = "채널에 접근할 권한이 없습니다")
-            }
-
-            val lastReadAt = membership.lastReadAt ?: LocalDateTime.of(1970, 1, 1, 0, 0)
-            val unreadCount = messageReadsRepository.countUnreadMessagesByChannelAndUser(channelId, userId, lastReadAt)
-
-            ApiResponse(true, data = unreadCount)
-        } catch (e: Exception) {
-            logger.error("읽지 않은 메시지 개수 조회 실패: ${e.message}", e)
-            ApiResponse(false, error = "읽지 않은 메시지 개수 조회 중 오류가 발생했습니다")
+    fun getUnreadMessageCount(channelId: UUID, userId: UUID): Long {
+        val membership = channelMembersRepository.findByChannelIdAndUserId(channelId, userId)
+        if (membership == null || !membership.isActive) {
+            throw ChannelAccessDeniedException(channelId, userId)
         }
+
+        val lastReadAt = membership.lastReadAt ?: LocalDateTime.of(1970, 1, 1, 0, 0)
+        return messageReadsRepository.countUnreadMessagesByChannelAndUser(channelId, userId, lastReadAt)
     }
 
     /**
      * 사용자의 전체 읽지 않은 메시지 개수 조회
+     *
+     * @param userId 사용자 ID
+     * @return 읽지 않은 메시지 총 개수
      */
     @Transactional(readOnly = true)
-    fun getTotalUnreadMessageCount(userId: UUID): ApiResponse<Long> {
-        return try {
-            val lastSeenAt = LocalDateTime.now().minusDays(7) // 최근 7일 기준
-            val unreadCount = messageReadsRepository.countUnreadMessagesByUser(userId, lastSeenAt)
-
-            ApiResponse(true, data = unreadCount)
-        } catch (e: Exception) {
-            logger.error("전체 읽지 않은 메시지 개수 조회 실패: ${e.message}", e)
-            ApiResponse(false, error = "전체 읽지 않은 메시지 개수 조회 중 오류가 발생했습니다")
-        }
+    fun getTotalUnreadMessageCount(userId: UUID): Long {
+        val lastSeenAt = LocalDateTime.now().minusDays(7) // 최근 7일 기준
+        return messageReadsRepository.countUnreadMessagesByUser(userId, lastSeenAt)
     }
 
     /**
      * 메시지 검색
+     *
+     * @param channelId 채널 ID
+     * @param searchTerm 검색어
+     * @param userId 요청 사용자 ID
+     * @param page 페이지 번호
+     * @param size 페이지 크기
+     * @return 페이징된 검색 결과
+     * @throws ChannelAccessDeniedException 채널 접근 권한이 없는 경우
      */
     @Transactional(readOnly = true)
     fun searchMessages(
-        channelId: UUID, 
-        searchTerm: String, 
-        userId: UUID, 
-        page: Int = 0, 
+        channelId: UUID,
+        searchTerm: String,
+        userId: UUID,
+        page: Int = 0,
         size: Int = 20
-    ): ApiResponse<PagedResponse<MessageResponse>> {
-        return try {
-            // 채널 멤버십 확인
-            val membership = channelMembersRepository.findByChannelIdAndUserId(channelId, userId)
-            if (membership == null || !membership.isActive) {
-                return ApiResponse(false, message = "채널에 접근할 권한이 없습니다")
-            }
+    ): PagedResponse<MessageResponse> {
+        validateChannelAccess(channelId, userId)
 
-            val pageable = PageRequest.of(page, size)
-            val messages = messageRepository.searchMessagesByMetadata(channelId, searchTerm, pageable)
-            
-            val messageResponses = messages.content.map { it.toResponse() }
-            val pagedResponse = PagedResponse(
-                content = messageResponses,
-                page = messages.number,
-                size = messages.size,
-                totalElements = messages.totalElements,
-                totalPages = messages.totalPages,
-                hasNext = messages.hasNext(),
-                hasPrevious = messages.hasPrevious()
+        val pageable = PageRequest.of(page, size)
+        val messages = messageRepository.searchMessagesByMetadata(channelId, searchTerm, pageable)
+
+        return PagedResponse(
+            content = messages.content.map { it.toResponse() },
+            page = messages.number,
+            size = messages.size,
+            totalElements = messages.totalElements,
+            totalPages = messages.totalPages,
+            hasNext = messages.hasNext(),
+            hasPrevious = messages.hasPrevious()
+        )
+    }
+
+    // ============================================
+    // Private Helper Methods
+    // ============================================
+
+    /**
+     * 채널 접근 권한 검증
+     */
+    private fun validateChannelAccess(channelId: UUID, userId: UUID) {
+        val membership = channelMembersRepository.findByChannelIdAndUserId(channelId, userId)
+        if (membership == null || !membership.isActive) {
+            throw ChannelAccessDeniedException(channelId, userId)
+        }
+    }
+
+    /**
+     * WebSocket으로 메시지 브로드캐스트 (best effort)
+     */
+    private fun broadcastMessage(message: Message) {
+        try {
+            messagingTemplate.convertAndSend(
+                "/topic/channel/${message.channelId}",
+                message.toResponse()
             )
-
-            ApiResponse(true, data = pagedResponse)
+            logger.debug("WebSocket 브로드캐스트 완료: channelId={}", message.channelId)
         } catch (e: Exception) {
-            logger.error("메시지 검색 실패: ${e.message}", e)
-            ApiResponse(false, error = "메시지 검색 중 오류가 발생했습니다")
+            logger.warn("WebSocket 브로드캐스트 실패 (계속 진행): channelId={}, error={}", message.channelId, e.message)
+            // 브로드캐스트 실패해도 메시지는 저장되었으므로 예외를 던지지 않음
         }
     }
 
@@ -382,11 +371,11 @@ class MessageService(
                     fileName = metadata.fileName,
                     fileSize = metadata.fileSize,
                     mimeType = metadata.mimeType,
-                    fileUrl = metadata.encryptedFileUrl, // encryptedFileUrl을 fileUrl로 매핑
+                    fileUrl = metadata.encryptedFileUrl,
                     thumbnailUrl = metadata.thumbnailUrl
                 )
             },
-            replyToMessageId = null, // Message 엔티티에 replyToMessageId 필드가 없음
+            replyToMessageId = null,
             status = this.status.name,
             createdAt = this.createdAt,
             updatedAt = this.updatedAt

@@ -1,47 +1,69 @@
 package com.august.cupid.service
 
-import com.august.cupid.model.dto.*
+import com.august.cupid.exception.*
+import com.august.cupid.model.dto.SendMessageRequest
 import com.august.cupid.model.entity.*
 import com.august.cupid.repository.ChannelMembersRepository
 import com.august.cupid.repository.MessageReadsRepository
 import com.august.cupid.repository.MessageRepository
 import com.august.cupid.repository.UserRepository
 import io.mockk.*
-import org.assertj.core.api.Assertions.assertThat
+import io.mockk.impl.annotations.MockK
+import io.mockk.junit5.MockKExtension
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Pageable
 import org.springframework.messaging.simp.SimpMessagingTemplate
 import java.time.LocalDateTime
 import java.util.*
 
 /**
  * MessageService 단위 테스트
- * 메시지 관련 비즈니스 로직 테스트
+ *
+ * 검증 항목:
+ * - 메시지 전송 시 예외 처리
+ * - 채널 접근 권한 검증
+ * - 메시지 수정/삭제 권한 검증
+ * - 정상 동작 확인
  */
+@ExtendWith(MockKExtension::class)
 class MessageServiceTest {
 
+    @MockK
     private lateinit var messageRepository: MessageRepository
+
+    @MockK
     private lateinit var messageReadsRepository: MessageReadsRepository
+
+    @MockK
     private lateinit var channelMembersRepository: ChannelMembersRepository
+
+    @MockK
     private lateinit var userRepository: UserRepository
+
+    @MockK
     private lateinit var messagingTemplate: SimpMessagingTemplate
+
     private lateinit var messageService: MessageService
 
     private val testUserId = UUID.randomUUID()
     private val testChannelId = UUID.randomUUID()
     private val testMessageId = UUID.randomUUID()
-    private val testUsername = "testuser"
-    private val testEmail = "test@example.com"
+
+    // Test fixtures
+    private lateinit var testUser: User
+    private lateinit var testChannel: Channel
 
     @BeforeEach
     fun setUp() {
-        messageRepository = mockk<MessageRepository>(relaxed = true)
-        messageReadsRepository = mockk<MessageReadsRepository>()
-        channelMembersRepository = mockk<ChannelMembersRepository>()
-        userRepository = mockk<UserRepository>()
-        messagingTemplate = mockk<SimpMessagingTemplate>()
+        // Create test fixtures
+        testUser = User(id = testUserId, username = "testuser", email = "test@test.com", passwordHash = "hash")
+        testChannel = Channel(id = testChannelId, type = ChannelType.DIRECT, name = "test channel", creator = testUser, match = null)
 
         messageService = MessageService(
             messageRepository,
@@ -52,325 +74,477 @@ class MessageServiceTest {
         )
     }
 
+    // Helper method to create ChannelMembers
+    private fun createMembership(
+        channel: Channel = testChannel,
+        user: User = testUser,
+        isActive: Boolean = true,
+        lastReadAt: LocalDateTime? = null
+    ): ChannelMembers {
+        return ChannelMembers(
+            channel = channel,
+            user = user,
+            isActive = isActive,
+            lastReadAt = lastReadAt
+        )
+    }
+
+    // ============================================
+    // sendMessage 테스트
+    // ============================================
+
     @Test
-    fun `{given} 유효한_채널ID와_암호화된_내용일때 {when} 메시지_전송하면 {then} 메시지가_저장되고_WebSocket으로_브로드캐스트된다`() {
-        // Given: 테스트 데이터 준비 및 Mock 설정
-        val sendMessageRequest = SendMessageRequest(
-            channelId = testChannelId,
-            encryptedContent = "encrypted_message_content",
+    fun `sendMessage should throw BadRequestException when channelId is null`() {
+        // Given
+        val request = SendMessageRequest(
+            channelId = null,
+            encryptedContent = "test content",
             messageType = "TEXT"
         )
-        val user = User(
-            id = testUserId,
-            username = testUsername,
-            email = testEmail,
-            passwordHash = "hash",
-            isActive = true,
-            createdAt = LocalDateTime.now(),
-            updatedAt = LocalDateTime.now()
+
+        // When & Then
+        val exception = assertThrows<BadRequestException> {
+            messageService.sendMessage(request, testUserId)
+        }
+        assertEquals("채널 ID는 필수입니다", exception.message)
+        assertEquals("channelId", exception.field)
+    }
+
+    @Test
+    fun `sendMessage should throw UserNotFoundException when sender does not exist`() {
+        // Given
+        val request = SendMessageRequest(
+            channelId = testChannelId,
+            encryptedContent = "test content",
+            messageType = "TEXT"
         )
-        val channelMembers = ChannelMembers(
-            id = UUID.randomUUID(),
-            channel = mockk<Channel>(relaxed = true),
-            user = user,
-            isActive = true,
-            joinedAt = LocalDateTime.now()
+        every { userRepository.findById(testUserId) } returns Optional.empty()
+
+        // When & Then
+        val exception = assertThrows<UserNotFoundException> {
+            messageService.sendMessage(request, testUserId)
+        }
+        assertTrue(exception.message!!.contains(testUserId.toString()))
+    }
+
+    @Test
+    fun `sendMessage should throw ChannelAccessDeniedException when user is not channel member`() {
+        // Given
+        val request = SendMessageRequest(
+            channelId = testChannelId,
+            encryptedContent = "test content",
+            messageType = "TEXT"
         )
+        every { userRepository.findById(testUserId) } returns Optional.of(testUser)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns null
+
+        // When & Then
+        assertThrows<ChannelAccessDeniedException> {
+            messageService.sendMessage(request, testUserId)
+        }
+    }
+
+    @Test
+    fun `sendMessage should throw ChannelAccessDeniedException when membership is not active`() {
+        // Given
+        val request = SendMessageRequest(
+            channelId = testChannelId,
+            encryptedContent = "test content",
+            messageType = "TEXT"
+        )
+        val membership = createMembership(isActive = false)
+        every { userRepository.findById(testUserId) } returns Optional.of(testUser)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns membership
+
+        // When & Then
+        assertThrows<ChannelAccessDeniedException> {
+            messageService.sendMessage(request, testUserId)
+        }
+    }
+
+    @Test
+    fun `sendMessage should successfully create and return message`() {
+        // Given
+        val request = SendMessageRequest(
+            channelId = testChannelId,
+            encryptedContent = "encrypted message",
+            messageType = "TEXT"
+        )
+        val membership = createMembership()
         val savedMessage = Message(
             id = testMessageId,
             channelId = testChannelId,
             senderId = testUserId,
-            encryptedContent = "encrypted_message_content",
-            messageType = MessageType.TEXT,
-            status = MessageStatus.SENT,
-            createdAt = LocalDateTime.now(),
-            updatedAt = LocalDateTime.now()
+            encryptedContent = "encrypted message",
+            messageType = MessageType.TEXT
         )
 
-        every { userRepository.findById(testUserId) } returns Optional.of(user)
-        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns channelMembers
-        every { messageRepository.save(any()) } returns savedMessage
+        every { userRepository.findById(testUserId) } returns Optional.of(testUser)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns membership
+        every { messageRepository.save(any<Message>()) } returns savedMessage
         every { messagingTemplate.convertAndSend(any<String>(), any<Any>()) } just Runs
 
-        // When: 테스트 대상 메서드 실행
-        val result = messageService.sendMessage(sendMessageRequest, testUserId)
+        // When
+        val result = messageService.sendMessage(request, testUserId)
 
-        // Then: 결과 검증
-        assertThat(result.success).isTrue()
-        assertThat(result.data).isNotNull()
-        assertThat(result.data?.id).isEqualTo(testMessageId)
-        assertThat(result.data?.channelId).isEqualTo(testChannelId)
-        assertThat(result.data?.senderId).isEqualTo(testUserId)
-        assertThat(result.data?.encryptedContent).isEqualTo("encrypted_message_content")
-        verify(exactly = 1) { userRepository.findById(testUserId) }
-        verify(exactly = 1) { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) }
-        verify(exactly = 1) { messageRepository.save(any()) }
-        verify(exactly = 1) { messagingTemplate.convertAndSend("/topic/channel/$testChannelId", any<Any>()) }
+        // Then
+        assertNotNull(result)
+        assertEquals(testChannelId, result.channelId)
+        assertEquals(testUserId, result.senderId)
+        assertEquals("encrypted message", result.encryptedContent)
+        verify { messageRepository.save(any<Message>()) }
     }
 
-    @Test
-    fun `{given} 채널_멤버가_아닌_사용자일때 {when} 메시지_전송하면 {then} 권한_없음_오류를_반환한다`() {
-        // Given: 테스트 데이터 준비 및 Mock 설정
-        val sendMessageRequest = SendMessageRequest(
-            channelId = testChannelId,
-            encryptedContent = "encrypted_message_content",
-            messageType = "TEXT"
-        )
-        val user = User(
-            id = testUserId,
-            username = testUsername,
-            email = testEmail,
-            passwordHash = "hash",
-            isActive = true,
-            createdAt = LocalDateTime.now(),
-            updatedAt = LocalDateTime.now()
-        )
+    // ============================================
+    // getChannelMessages 테스트
+    // ============================================
 
-        every { userRepository.findById(testUserId) } returns Optional.of(user)
+    @Test
+    fun `getChannelMessages should throw ChannelAccessDeniedException when user has no access`() {
+        // Given
         every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns null
 
-        // When: 테스트 대상 메서드 실행
-        val result = messageService.sendMessage(sendMessageRequest, testUserId)
-
-        // Then: 결과 검증
-        assertThat(result.success).isFalse()
-        assertThat(result.data).isNull()
-        assertThat(result.message).contains("채널에 메시지를 보낼 권한이 없습니다")
-        verify(exactly = 1) { userRepository.findById(testUserId) }
-        verify(exactly = 1) { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) }
-        verify(exactly = 0) { messageRepository.save(any()) }
-        verify(exactly = 0) { messagingTemplate.convertAndSend(any<String>(), any<Any>()) }
+        // When & Then
+        assertThrows<ChannelAccessDeniedException> {
+            messageService.getChannelMessages(testChannelId, testUserId)
+        }
     }
 
     @Test
-    fun `{given} 유효한_채널ID와_페이지_정보일때 {when} 메시지_조회하면 {then} 해당_채널의_메시지_목록을_반환한다`() {
-        // Given: 테스트 데이터 준비 및 Mock 설정
-        val page = 0
-        val size = 50
-        val channelMembers = ChannelMembers(
-            id = UUID.randomUUID(),
-            channel = mockk<Channel>(relaxed = true),
-            user = mockk<User>(relaxed = true),
-            isActive = true,
-            joinedAt = LocalDateTime.now()
+    fun `getChannelMessages should return paged messages for valid member`() {
+        // Given
+        val membership = createMembership()
+        val messages = listOf(
+            Message(channelId = testChannelId, senderId = testUserId, encryptedContent = "msg1"),
+            Message(channelId = testChannelId, senderId = testUserId, encryptedContent = "msg2")
         )
-        val message1 = Message(
-            id = UUID.randomUUID(),
-            channelId = testChannelId,
-            senderId = testUserId,
-            encryptedContent = "message1",
-            messageType = MessageType.TEXT,
-            status = MessageStatus.SENT,
-            createdAt = LocalDateTime.now(),
-            updatedAt = LocalDateTime.now()
-        )
-        val message2 = Message(
-            id = UUID.randomUUID(),
-            channelId = testChannelId,
-            senderId = UUID.randomUUID(),
-            encryptedContent = "message2",
-            messageType = MessageType.TEXT,
-            status = MessageStatus.SENT,
-            createdAt = LocalDateTime.now(),
-            updatedAt = LocalDateTime.now()
-        )
-        val messages = listOf(message1, message2)
-        val pageable = PageRequest.of(page, size)
-        val messagePage = PageImpl(messages, pageable, messages.size.toLong())
+        val page = PageImpl(messages, PageRequest.of(0, 50), 2)
 
-        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns channelMembers
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns membership
         every {
             messageRepository.findByChannelIdAndStatusNotOrderByCreatedAtDesc(
                 testChannelId,
                 MessageStatus.DELETED,
-                pageable
+                any<Pageable>()
             )
-        } returns messagePage
+        } returns page
 
-        // When: 테스트 대상 메서드 실행
-        val result = messageService.getChannelMessages(testChannelId, testUserId, page, size)
+        // When
+        val result = messageService.getChannelMessages(testChannelId, testUserId)
 
-        // Then: 결과 검증
-        assertThat(result.success).isTrue()
-        assertThat(result.data).isNotNull()
-        assertThat(result.data?.content).hasSize(2)
-        assertThat(result.data?.page).isEqualTo(page)
-        assertThat(result.data?.size).isEqualTo(size)
-        assertThat(result.data?.totalElements).isEqualTo(2L)
-        verify(exactly = 1) { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) }
-        verify(exactly = 1) {
-            messageRepository.findByChannelIdAndStatusNotOrderByCreatedAtDesc(
-                testChannelId,
-                MessageStatus.DELETED,
-                pageable
-            )
+        // Then
+        assertEquals(2, result.content.size)
+        assertEquals(0, result.page)
+        assertEquals(2, result.totalElements)
+    }
+
+    // ============================================
+    // getMessageById 테스트
+    // ============================================
+
+    @Test
+    fun `getMessageById should throw MessageNotFoundException when message does not exist`() {
+        // Given
+        every { messageRepository.findById(testMessageId) } returns Optional.empty()
+
+        // When & Then
+        assertThrows<MessageNotFoundException> {
+            messageService.getMessageById(testMessageId, testUserId)
         }
     }
 
     @Test
-    fun `{given} 본인이_작성한_메시지ID와_새로운_내용일때 {when} 메시지_수정하면 {then} 메시지가_수정되고_성공_응답을_반환한다`() {
-        // Given: 테스트 데이터 준비 및 Mock 설정
-        val newContent = "수정된_암호화된_내용"
+    fun `getMessageById should throw ChannelAccessDeniedException when user has no channel access`() {
+        // Given
+        val message = Message(
+            id = testMessageId,
+            channelId = testChannelId,
+            senderId = UUID.randomUUID(),
+            encryptedContent = "content"
+        )
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns null
+
+        // When & Then
+        assertThrows<ChannelAccessDeniedException> {
+            messageService.getMessageById(testMessageId, testUserId)
+        }
+    }
+
+    @Test
+    fun `getMessageById should return message for valid request`() {
+        // Given
         val message = Message(
             id = testMessageId,
             channelId = testChannelId,
             senderId = testUserId,
-            encryptedContent = "원본_암호화된_내용",
-            messageType = MessageType.TEXT,
-            status = MessageStatus.SENT,
-            createdAt = LocalDateTime.now(),
-            updatedAt = LocalDateTime.now()
+            encryptedContent = "content"
         )
-        val updatedMessage = message.copy(
-            encryptedContent = newContent,
-            updatedAt = LocalDateTime.now()
-        )
+        val membership = createMembership()
 
-        every { messageRepository.findById(testMessageId) } returnsMany listOf(
-            Optional.of(message),
-            Optional.of(updatedMessage)
-        )
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns membership
 
-        // When: 테스트 대상 메서드 실행
-        val result = messageService.editMessage(testMessageId, newContent, testUserId)
+        // When
+        val result = messageService.getMessageById(testMessageId, testUserId)
 
-        // Then: 결과 검증
-        assertThat(result.success).isTrue()
-        assertThat(result.data).isNotNull()
-        assertThat(result.message).contains("메시지가 성공적으로 수정되었습니다")
-        verify(exactly = 2) { messageRepository.findById(testMessageId) }
-        verify(exactly = 1) {
-            messageRepository.updateMessageContent(
-                testMessageId,
-                newContent,
-                any(),
-                any<EditHistory>()
-            )
+        // Then
+        assertEquals(testMessageId, result.id)
+        assertEquals(testChannelId, result.channelId)
+    }
+
+    // ============================================
+    // editMessage 테스트
+    // ============================================
+
+    @Test
+    fun `editMessage should throw MessageNotFoundException when message does not exist`() {
+        // Given
+        every { messageRepository.findById(testMessageId) } returns Optional.empty()
+
+        // When & Then
+        assertThrows<MessageNotFoundException> {
+            messageService.editMessage(testMessageId, "new content", testUserId)
         }
     }
 
     @Test
-    fun `{given} 타인이_작성한_메시지ID일때 {when} 메시지_수정하면 {then} 권한_없음_오류를_반환한다`() {
-        // Given: 테스트 데이터 준비 및 Mock 설정
-        val newContent = "수정된_암호화된_내용"
+    fun `editMessage should throw MessageAccessDeniedException when user is not sender`() {
+        // Given
         val otherUserId = UUID.randomUUID()
         val message = Message(
             id = testMessageId,
             channelId = testChannelId,
             senderId = otherUserId,
-            encryptedContent = "원본_암호화된_내용",
-            messageType = MessageType.TEXT,
-            status = MessageStatus.SENT,
-            createdAt = LocalDateTime.now(),
-            updatedAt = LocalDateTime.now()
+            encryptedContent = "content"
         )
-
         every { messageRepository.findById(testMessageId) } returns Optional.of(message)
 
-        // When: 테스트 대상 메서드 실행
-        val result = messageService.editMessage(testMessageId, newContent, testUserId)
-
-        // Then: 결과 검증
-        assertThat(result.success).isFalse()
-        assertThat(result.data).isNull()
-        assertThat(result.message).contains("메시지를 수정할 권한이 없습니다")
-        verify(exactly = 1) { messageRepository.findById(testMessageId) }
-        verify(exactly = 0) { messageRepository.updateMessageContent(any(), any(), any(), any()) }
+        // When & Then
+        val exception = assertThrows<MessageAccessDeniedException> {
+            messageService.editMessage(testMessageId, "new content", testUserId)
+        }
+        assertEquals("메시지를 수정할 권한이 없습니다", exception.message)
     }
 
     @Test
-    fun `{given} 본인이_작성한_메시지ID일때 {when} 메시지_삭제하면 {then} 메시지가_삭제되고_성공_응답을_반환한다`() {
-        // Given: 테스트 데이터 준비 및 Mock 설정
+    fun `editMessage should throw BadRequestException when message is deleted`() {
+        // Given
         val message = Message(
             id = testMessageId,
             channelId = testChannelId,
             senderId = testUserId,
-            encryptedContent = "암호화된_내용",
-            messageType = MessageType.TEXT,
-            status = MessageStatus.SENT,
-            createdAt = LocalDateTime.now(),
-            updatedAt = LocalDateTime.now()
+            encryptedContent = "content",
+            status = MessageStatus.DELETED
         )
-
         every { messageRepository.findById(testMessageId) } returns Optional.of(message)
 
-        // When: 테스트 대상 메서드 실행
-        val result = messageService.deleteMessage(testMessageId, testUserId)
+        // When & Then
+        val exception = assertThrows<BadRequestException> {
+            messageService.editMessage(testMessageId, "new content", testUserId)
+        }
+        assertEquals("삭제된 메시지는 수정할 수 없습니다", exception.message)
+    }
 
-        // Then: 결과 검증
-        assertThat(result.success).isTrue()
-        assertThat(result.message).contains("메시지가 성공적으로 삭제되었습니다")
-        verify(exactly = 1) { messageRepository.findById(testMessageId) }
-        verify(exactly = 1) {
-            messageRepository.deleteMessage(
+    @Test
+    fun `editMessage should successfully update message`() {
+        // Given
+        val message = Message(
+            id = testMessageId,
+            channelId = testChannelId,
+            senderId = testUserId,
+            encryptedContent = "old content"
+        )
+        val updatedMessage = message.copy(encryptedContent = "new content")
+
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message) andThen Optional.of(updatedMessage)
+        every {
+            messageRepository.updateMessageContent(
                 testMessageId,
-                any<LocalDateTime>(),
-                any<LocalDateTime>()
+                "new content",
+                "old content"
             )
+        } returns true
+
+        // When
+        val result = messageService.editMessage(testMessageId, "new content", testUserId)
+
+        // Then
+        assertEquals("new content", result.encryptedContent)
+        verify { messageRepository.updateMessageContent(testMessageId, "new content", "old content") }
+    }
+
+    // ============================================
+    // deleteMessage 테스트
+    // ============================================
+
+    @Test
+    fun `deleteMessage should throw MessageNotFoundException when message does not exist`() {
+        // Given
+        every { messageRepository.findById(testMessageId) } returns Optional.empty()
+
+        // When & Then
+        assertThrows<MessageNotFoundException> {
+            messageService.deleteMessage(testMessageId, testUserId)
         }
     }
 
     @Test
-    fun `{given} 메시지ID와_사용자ID일때 {when} 읽음_확인_처리하면 {then} 읽음_상태가_저장되고_성공_응답을_반환한다`() {
-        // Given: 테스트 데이터 준비 및 Mock 설정
+    fun `deleteMessage should throw MessageAccessDeniedException when user is not sender`() {
+        // Given
+        val otherUserId = UUID.randomUUID()
+        val message = Message(
+            id = testMessageId,
+            channelId = testChannelId,
+            senderId = otherUserId,
+            encryptedContent = "content"
+        )
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
+
+        // When & Then
+        val exception = assertThrows<MessageAccessDeniedException> {
+            messageService.deleteMessage(testMessageId, testUserId)
+        }
+        assertEquals("메시지를 삭제할 권한이 없습니다", exception.message)
+    }
+
+    @Test
+    fun `deleteMessage should throw BadRequestException when message is already deleted`() {
+        // Given
+        val message = Message(
+            id = testMessageId,
+            channelId = testChannelId,
+            senderId = testUserId,
+            encryptedContent = "content",
+            status = MessageStatus.DELETED
+        )
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
+
+        // When & Then
+        val exception = assertThrows<BadRequestException> {
+            messageService.deleteMessage(testMessageId, testUserId)
+        }
+        assertEquals("이미 삭제된 메시지입니다", exception.message)
+    }
+
+    @Test
+    fun `deleteMessage should successfully soft delete message`() {
+        // Given
+        val message = Message(
+            id = testMessageId,
+            channelId = testChannelId,
+            senderId = testUserId,
+            encryptedContent = "content"
+        )
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
+        every { messageRepository.softDeleteMessage(testMessageId) } returns true
+
+        // When
+        messageService.deleteMessage(testMessageId, testUserId)
+
+        // Then
+        verify { messageRepository.softDeleteMessage(testMessageId) }
+    }
+
+    // ============================================
+    // markMessageAsRead 테스트
+    // ============================================
+
+    @Test
+    fun `markMessageAsRead should throw MessageNotFoundException when message does not exist`() {
+        // Given
+        every { messageRepository.findById(testMessageId) } returns Optional.empty()
+
+        // When & Then
+        assertThrows<MessageNotFoundException> {
+            messageService.markMessageAsRead(testMessageId, testUserId)
+        }
+    }
+
+    @Test
+    fun `markMessageAsRead should return true when already marked as read`() {
+        // Given
         val message = Message(
             id = testMessageId,
             channelId = testChannelId,
             senderId = UUID.randomUUID(),
-            encryptedContent = "암호화된_내용",
-            messageType = MessageType.TEXT,
-            status = MessageStatus.SENT,
-            createdAt = LocalDateTime.now(),
-            updatedAt = LocalDateTime.now()
+            encryptedContent = "content"
         )
-        val channelMembers = ChannelMembers(
-            id = UUID.randomUUID(),
-            channel = mockk<Channel>(relaxed = true),
-            user = mockk<User>(relaxed = true),
-            isActive = true,
-            joinedAt = LocalDateTime.now()
-        )
-        val messageRead = MessageReads(
+        val membership = createMembership()
+        val existingRead = MessageReads(
             messageId = testMessageId,
             channelId = testChannelId,
-            userId = testUserId,
-            readAt = LocalDateTime.now()
+            userId = testUserId
         )
 
         every { messageRepository.findById(testMessageId) } returns Optional.of(message)
-        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns channelMembers
-        every { messageReadsRepository.findByMessageIdAndUserId(testMessageId, testUserId) } returns null
-        every { messageReadsRepository.save(any<MessageReads>()) } returns messageRead
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns membership
+        every { messageReadsRepository.findByMessageIdAndUserId(testMessageId, testUserId) } returns existingRead
 
-        // When: 테스트 대상 메서드 실행
+        // When
         val result = messageService.markMessageAsRead(testMessageId, testUserId)
 
-        // Then: 결과 검증
-        assertThat(result.success).isTrue()
-        assertThat(result.message).contains("메시지 읽음 표시가 완료되었습니다")
-        verify(exactly = 1) { messageRepository.findById(testMessageId) }
-        verify(exactly = 1) { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) }
-        verify(exactly = 1) { messageReadsRepository.findByMessageIdAndUserId(testMessageId, testUserId) }
-        verify(exactly = 1) { messageReadsRepository.save(any<MessageReads>()) }
+        // Then
+        assertTrue(result)
+        verify(exactly = 0) { messageReadsRepository.save(any<MessageReads>()) }
     }
 
     @Test
-    fun `{given} 채널_멤버가_아닌_사용자일때 {when} 메시지_조회하면 {then} 권한_없음_오류를_반환한다`() {
-        // Given: 테스트 데이터 준비 및 Mock 설정
-        val page = 0
-        val size = 50
+    fun `markMessageAsRead should create new read receipt and return false`() {
+        // Given
+        val message = Message(
+            id = testMessageId,
+            channelId = testChannelId,
+            senderId = UUID.randomUUID(),
+            encryptedContent = "content"
+        )
+        val membership = createMembership()
 
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns membership
+        every { messageReadsRepository.findByMessageIdAndUserId(testMessageId, testUserId) } returns null
+        every { messageReadsRepository.save(any<MessageReads>()) } returns mockk()
+
+        // When
+        val result = messageService.markMessageAsRead(testMessageId, testUserId)
+
+        // Then
+        assertFalse(result)
+        verify { messageReadsRepository.save(any<MessageReads>()) }
+    }
+
+    // ============================================
+    // getUnreadMessageCount 테스트
+    // ============================================
+
+    @Test
+    fun `getUnreadMessageCount should throw ChannelAccessDeniedException when user has no access`() {
+        // Given
         every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns null
 
-        // When: 테스트 대상 메서드 실행
-        val result = messageService.getChannelMessages(testChannelId, testUserId, page, size)
+        // When & Then
+        assertThrows<ChannelAccessDeniedException> {
+            messageService.getUnreadMessageCount(testChannelId, testUserId)
+        }
+    }
 
-        // Then: 결과 검증
-        assertThat(result.success).isFalse()
-        assertThat(result.data).isNull()
-        assertThat(result.message).contains("채널에 접근할 권한이 없습니다")
-        verify(exactly = 1) { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) }
-        verify(exactly = 0) { messageRepository.findByChannelIdAndStatusNotOrderByCreatedAtDesc(any(), any(), any()) }
+    @Test
+    fun `getUnreadMessageCount should return count for valid member`() {
+        // Given
+        val membership = createMembership(lastReadAt = LocalDateTime.now().minusHours(1))
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns membership
+        every {
+            messageReadsRepository.countUnreadMessagesByChannelAndUser(
+                testChannelId,
+                testUserId,
+                any<LocalDateTime>()
+            )
+        } returns 5L
+
+        // When
+        val result = messageService.getUnreadMessageCount(testChannelId, testUserId)
+
+        // Then
+        assertEquals(5L, result)
     }
 }
-
