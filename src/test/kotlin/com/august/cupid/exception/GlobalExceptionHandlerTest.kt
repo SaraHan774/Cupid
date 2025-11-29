@@ -1,10 +1,13 @@
 package com.august.cupid.exception
 
 import com.august.cupid.service.EncryptionMetricsService
+import io.mockk.*
+import io.mockk.impl.annotations.MockK
+import io.mockk.junit5.MockKExtension
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.mockito.Mockito.*
+import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.http.HttpStatus
 import org.springframework.validation.BindingResult
 import org.springframework.validation.FieldError
@@ -21,14 +24,16 @@ import java.util.*
  * - HTTP 상태 코드 매핑
  * - 응답 구조 일관성
  */
+@ExtendWith(MockKExtension::class)
 class GlobalExceptionHandlerTest {
 
-    private lateinit var handler: GlobalExceptionHandler
+    @MockK
     private lateinit var metricsService: EncryptionMetricsService
+
+    private lateinit var handler: GlobalExceptionHandler
 
     @BeforeEach
     fun setUp() {
-        metricsService = mock(EncryptionMetricsService::class.java)
         handler = GlobalExceptionHandler(metricsService)
     }
 
@@ -226,15 +231,15 @@ class GlobalExceptionHandlerTest {
     @Test
     fun `handleValidationException should return 400 with validation errors`() {
         // Given
-        val bindingResult = mock(BindingResult::class.java)
         val fieldErrors = listOf(
             FieldError("request", "username", "사용자명은 필수입니다"),
             FieldError("request", "email", "이메일 형식이 올바르지 않습니다")
         )
-        `when`(bindingResult.fieldErrors).thenReturn(fieldErrors)
+        val bindingResult = mockk<BindingResult>()
+        every { bindingResult.fieldErrors } returns fieldErrors
 
-        val exception = mock(MethodArgumentNotValidException::class.java)
-        `when`(exception.bindingResult).thenReturn(bindingResult)
+        val exception = mockk<MethodArgumentNotValidException>()
+        every { exception.bindingResult } returns bindingResult
 
         // When
         val response = handler.handleValidationException(exception)
@@ -253,10 +258,10 @@ class GlobalExceptionHandlerTest {
     @Test
     fun `handleTypeMismatchException should return 400 for invalid UUID`() {
         // Given
-        val exception = mock(MethodArgumentTypeMismatchException::class.java)
-        `when`(exception.name).thenReturn("channelId")
-        `when`(exception.value).thenReturn("not-a-uuid")
-        `when`(exception.requiredType).thenReturn(UUID::class.java)
+        val exception = mockk<MethodArgumentTypeMismatchException>()
+        every { exception.name } returns "channelId"
+        every { exception.value } returns "not-a-uuid"
+        every { exception.requiredType } returns UUID::class.java
 
         // When
         val response = handler.handleTypeMismatchException(exception)
@@ -310,6 +315,14 @@ class GlobalExceptionHandlerTest {
         val userId = UUID.randomUUID().toString()
         val exception = KeyGenerationException("키 생성 실패", userId = userId)
 
+        every {
+            metricsService.incrementErrorCount(
+                errorType = "KeyGenerationException",
+                operation = "generate",
+                tags = any()
+            )
+        } just Runs
+
         // When
         val response = handler.handleKeyGenerationException(exception)
 
@@ -320,17 +333,27 @@ class GlobalExceptionHandlerTest {
         assertEquals("KEY_GENERATION_ERROR", response.body!!.errorCode)
 
         // Verify metric was recorded
-        verify(metricsService).incrementErrorCount(
-            errorType = eq("KeyGenerationException"),
-            operation = eq("generate"),
-            tags = anyMap()
-        )
+        verify {
+            metricsService.incrementErrorCount(
+                errorType = "KeyGenerationException",
+                operation = "generate",
+                tags = any()
+            )
+        }
     }
 
     @Test
     fun `handleGenericException should return 500 for unexpected errors`() {
         // Given
         val exception = RuntimeException("Unexpected error")
+
+        every {
+            metricsService.incrementErrorCount(
+                errorType = "RuntimeException",
+                operation = "unknown",
+                tags = any()
+            )
+        } just Runs
 
         // When
         val response = handler.handleGenericException(exception)

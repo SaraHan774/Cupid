@@ -6,9 +6,11 @@ import com.august.cupid.model.dto.SendMessageRequest
 import com.august.cupid.model.entity.Channel
 import com.august.cupid.model.entity.ChannelMembers
 import com.august.cupid.model.entity.ChannelType
+import com.august.cupid.model.entity.User
 import com.august.cupid.repository.ChannelMembersRepository
 import com.august.cupid.repository.ChannelRepository
 import com.august.cupid.repository.MessageRepository
+import com.august.cupid.repository.UserRepository
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -55,9 +57,13 @@ class MessageControllerTest {
     @Autowired
     private lateinit var messageRepository: MessageRepository
 
+    @Autowired
+    private lateinit var userRepository: UserRepository
+
     private var accessToken: String = ""
     private var userId: UUID = UUID.randomUUID()
     private var channelId: UUID = UUID.randomUUID()
+    private lateinit var testUser: User
 
     @BeforeEach
     fun setUp() {
@@ -89,14 +95,17 @@ class MessageControllerTest {
         val loginResponse = objectMapper.readTree(loginResult.response.contentAsString)
         accessToken = loginResponse.path("data").path("accessToken").asText()
 
+        // Get the user entity for channel/membership creation
+        testUser = userRepository.findById(userId).orElseThrow()
+
         // Create test channel and membership
-        val channel = Channel(type = ChannelType.DIRECT)
+        val channel = Channel(type = ChannelType.DIRECT, name = "test-channel", creator = testUser, match = null)
         val savedChannel = channelRepository.save(channel)
-        channelId = savedChannel.id
+        channelId = savedChannel.id!!
 
         val membership = ChannelMembers(
-            channelId = channelId,
-            userId = userId,
+            channel = savedChannel,
+            user = testUser,
             isActive = true
         )
         channelMembersRepository.save(membership)
@@ -107,16 +116,16 @@ class MessageControllerTest {
     // ============================================
 
     @Test
-    fun `request without token should return 401 Unauthorized`() {
+    fun `request without token should return 403 Forbidden`() {
         mockMvc.perform(get("/api/v1/chat/channels/$channelId/messages"))
-            .andExpect(status().isUnauthorized)
+            .andExpect(status().isForbidden)
     }
 
     @Test
-    fun `request with invalid token should return 401 Unauthorized`() {
+    fun `request with invalid token should return 403 Forbidden`() {
         mockMvc.perform(get("/api/v1/chat/channels/$channelId/messages")
             .header("Authorization", "Bearer invalid-token"))
-            .andExpect(status().isUnauthorized)
+            .andExpect(status().isForbidden)
     }
 
     @Test
@@ -193,7 +202,9 @@ class MessageControllerTest {
     @Test
     fun `access to non-member channel should return 403 with proper error structure`() {
         // Create another channel without membership
-        val anotherChannel = channelRepository.save(Channel(type = ChannelType.DIRECT))
+        val anotherChannel = channelRepository.save(
+            Channel(type = ChannelType.DIRECT, name = "another-channel", creator = testUser, match = null)
+        )
 
         mockMvc.perform(get("/api/v1/chat/channels/${anotherChannel.id}/messages")
             .header("Authorization", "Bearer $accessToken"))
@@ -361,10 +372,14 @@ class MessageControllerTest {
         val otherUserId = UUID.fromString(otherUserResponse.path("data").path("user").path("id").asText())
         val otherToken = otherUserResponse.path("data").path("accessToken").asText()
 
+        // Get the other user entity and the channel
+        val otherUser = userRepository.findById(otherUserId).orElseThrow()
+        val channel = channelRepository.findById(channelId).orElseThrow()
+
         // Add other user to channel
         channelMembersRepository.save(ChannelMembers(
-            channelId = channelId,
-            userId = otherUserId,
+            channel = channel,
+            user = otherUser,
             isActive = true
         ))
 

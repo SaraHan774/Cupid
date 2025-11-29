@@ -7,13 +7,17 @@ import com.august.cupid.repository.ChannelMembersRepository
 import com.august.cupid.repository.MessageReadsRepository
 import com.august.cupid.repository.MessageRepository
 import com.august.cupid.repository.UserRepository
+import io.mockk.*
+import io.mockk.impl.annotations.MockK
+import io.mockk.junit5.MockKExtension
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import org.mockito.Mockito.*
+import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Pageable
 import org.springframework.messaging.simp.SimpMessagingTemplate
 import java.time.LocalDateTime
 import java.util.*
@@ -27,26 +31,39 @@ import java.util.*
  * - 메시지 수정/삭제 권한 검증
  * - 정상 동작 확인
  */
+@ExtendWith(MockKExtension::class)
 class MessageServiceTest {
 
-    private lateinit var messageService: MessageService
+    @MockK
     private lateinit var messageRepository: MessageRepository
+
+    @MockK
     private lateinit var messageReadsRepository: MessageReadsRepository
+
+    @MockK
     private lateinit var channelMembersRepository: ChannelMembersRepository
+
+    @MockK
     private lateinit var userRepository: UserRepository
+
+    @MockK
     private lateinit var messagingTemplate: SimpMessagingTemplate
+
+    private lateinit var messageService: MessageService
 
     private val testUserId = UUID.randomUUID()
     private val testChannelId = UUID.randomUUID()
     private val testMessageId = UUID.randomUUID()
 
+    // Test fixtures
+    private lateinit var testUser: User
+    private lateinit var testChannel: Channel
+
     @BeforeEach
     fun setUp() {
-        messageRepository = mock(MessageRepository::class.java)
-        messageReadsRepository = mock(MessageReadsRepository::class.java)
-        channelMembersRepository = mock(ChannelMembersRepository::class.java)
-        userRepository = mock(UserRepository::class.java)
-        messagingTemplate = mock(SimpMessagingTemplate::class.java)
+        // Create test fixtures
+        testUser = User(id = testUserId, username = "testuser", email = "test@test.com", passwordHash = "hash")
+        testChannel = Channel(id = testChannelId, type = ChannelType.DIRECT, name = "test channel", creator = testUser, match = null)
 
         messageService = MessageService(
             messageRepository,
@@ -54,6 +71,21 @@ class MessageServiceTest {
             channelMembersRepository,
             userRepository,
             messagingTemplate
+        )
+    }
+
+    // Helper method to create ChannelMembers
+    private fun createMembership(
+        channel: Channel = testChannel,
+        user: User = testUser,
+        isActive: Boolean = true,
+        lastReadAt: LocalDateTime? = null
+    ): ChannelMembers {
+        return ChannelMembers(
+            channel = channel,
+            user = user,
+            isActive = isActive,
+            lastReadAt = lastReadAt
         )
     }
 
@@ -86,7 +118,7 @@ class MessageServiceTest {
             encryptedContent = "test content",
             messageType = "TEXT"
         )
-        `when`(userRepository.findById(testUserId)).thenReturn(Optional.empty())
+        every { userRepository.findById(testUserId) } returns Optional.empty()
 
         // When & Then
         val exception = assertThrows<UserNotFoundException> {
@@ -103,9 +135,8 @@ class MessageServiceTest {
             encryptedContent = "test content",
             messageType = "TEXT"
         )
-        val user = User(id = testUserId, username = "testuser", email = "test@test.com", passwordHash = "hash")
-        `when`(userRepository.findById(testUserId)).thenReturn(Optional.of(user))
-        `when`(channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId)).thenReturn(null)
+        every { userRepository.findById(testUserId) } returns Optional.of(testUser)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns null
 
         // When & Then
         assertThrows<ChannelAccessDeniedException> {
@@ -121,14 +152,9 @@ class MessageServiceTest {
             encryptedContent = "test content",
             messageType = "TEXT"
         )
-        val user = User(id = testUserId, username = "testuser", email = "test@test.com", passwordHash = "hash")
-        val membership = ChannelMembers(
-            channelId = testChannelId,
-            userId = testUserId,
-            isActive = false
-        )
-        `when`(userRepository.findById(testUserId)).thenReturn(Optional.of(user))
-        `when`(channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId)).thenReturn(membership)
+        val membership = createMembership(isActive = false)
+        every { userRepository.findById(testUserId) } returns Optional.of(testUser)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns membership
 
         // When & Then
         assertThrows<ChannelAccessDeniedException> {
@@ -144,8 +170,7 @@ class MessageServiceTest {
             encryptedContent = "encrypted message",
             messageType = "TEXT"
         )
-        val user = User(id = testUserId, username = "testuser", email = "test@test.com", passwordHash = "hash")
-        val membership = ChannelMembers(channelId = testChannelId, userId = testUserId, isActive = true)
+        val membership = createMembership()
         val savedMessage = Message(
             id = testMessageId,
             channelId = testChannelId,
@@ -154,9 +179,10 @@ class MessageServiceTest {
             messageType = MessageType.TEXT
         )
 
-        `when`(userRepository.findById(testUserId)).thenReturn(Optional.of(user))
-        `when`(channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId)).thenReturn(membership)
-        `when`(messageRepository.save(any(Message::class.java))).thenReturn(savedMessage)
+        every { userRepository.findById(testUserId) } returns Optional.of(testUser)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns membership
+        every { messageRepository.save(any<Message>()) } returns savedMessage
+        every { messagingTemplate.convertAndSend(any<String>(), any<Any>()) } just Runs
 
         // When
         val result = messageService.sendMessage(request, testUserId)
@@ -166,7 +192,7 @@ class MessageServiceTest {
         assertEquals(testChannelId, result.channelId)
         assertEquals(testUserId, result.senderId)
         assertEquals("encrypted message", result.encryptedContent)
-        verify(messageRepository).save(any(Message::class.java))
+        verify { messageRepository.save(any<Message>()) }
     }
 
     // ============================================
@@ -176,7 +202,7 @@ class MessageServiceTest {
     @Test
     fun `getChannelMessages should throw ChannelAccessDeniedException when user has no access`() {
         // Given
-        `when`(channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId)).thenReturn(null)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns null
 
         // When & Then
         assertThrows<ChannelAccessDeniedException> {
@@ -187,19 +213,21 @@ class MessageServiceTest {
     @Test
     fun `getChannelMessages should return paged messages for valid member`() {
         // Given
-        val membership = ChannelMembers(channelId = testChannelId, userId = testUserId, isActive = true)
+        val membership = createMembership()
         val messages = listOf(
             Message(channelId = testChannelId, senderId = testUserId, encryptedContent = "msg1"),
             Message(channelId = testChannelId, senderId = testUserId, encryptedContent = "msg2")
         )
         val page = PageImpl(messages, PageRequest.of(0, 50), 2)
 
-        `when`(channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId)).thenReturn(membership)
-        `when`(messageRepository.findByChannelIdAndStatusNotOrderByCreatedAtDesc(
-            eq(testChannelId),
-            eq(MessageStatus.DELETED),
-            any()
-        )).thenReturn(page)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns membership
+        every {
+            messageRepository.findByChannelIdAndStatusNotOrderByCreatedAtDesc(
+                testChannelId,
+                MessageStatus.DELETED,
+                any<Pageable>()
+            )
+        } returns page
 
         // When
         val result = messageService.getChannelMessages(testChannelId, testUserId)
@@ -217,7 +245,7 @@ class MessageServiceTest {
     @Test
     fun `getMessageById should throw MessageNotFoundException when message does not exist`() {
         // Given
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.empty())
+        every { messageRepository.findById(testMessageId) } returns Optional.empty()
 
         // When & Then
         assertThrows<MessageNotFoundException> {
@@ -234,8 +262,8 @@ class MessageServiceTest {
             senderId = UUID.randomUUID(),
             encryptedContent = "content"
         )
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.of(message))
-        `when`(channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId)).thenReturn(null)
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns null
 
         // When & Then
         assertThrows<ChannelAccessDeniedException> {
@@ -252,10 +280,10 @@ class MessageServiceTest {
             senderId = testUserId,
             encryptedContent = "content"
         )
-        val membership = ChannelMembers(channelId = testChannelId, userId = testUserId, isActive = true)
+        val membership = createMembership()
 
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.of(message))
-        `when`(channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId)).thenReturn(membership)
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns membership
 
         // When
         val result = messageService.getMessageById(testMessageId, testUserId)
@@ -272,7 +300,7 @@ class MessageServiceTest {
     @Test
     fun `editMessage should throw MessageNotFoundException when message does not exist`() {
         // Given
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.empty())
+        every { messageRepository.findById(testMessageId) } returns Optional.empty()
 
         // When & Then
         assertThrows<MessageNotFoundException> {
@@ -290,7 +318,7 @@ class MessageServiceTest {
             senderId = otherUserId,
             encryptedContent = "content"
         )
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.of(message))
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
 
         // When & Then
         val exception = assertThrows<MessageAccessDeniedException> {
@@ -309,7 +337,7 @@ class MessageServiceTest {
             encryptedContent = "content",
             status = MessageStatus.DELETED
         )
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.of(message))
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
 
         // When & Then
         val exception = assertThrows<BadRequestException> {
@@ -329,20 +357,21 @@ class MessageServiceTest {
         )
         val updatedMessage = message.copy(encryptedContent = "new content")
 
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.of(message))
-        `when`(messageRepository.updateMessageContent(
-            eq(testMessageId),
-            eq("new content"),
-            eq("old content")
-        )).thenReturn(true)
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.of(updatedMessage))
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message) andThen Optional.of(updatedMessage)
+        every {
+            messageRepository.updateMessageContent(
+                testMessageId,
+                "new content",
+                "old content"
+            )
+        } returns true
 
         // When
         val result = messageService.editMessage(testMessageId, "new content", testUserId)
 
         // Then
         assertEquals("new content", result.encryptedContent)
-        verify(messageRepository).updateMessageContent(testMessageId, "new content", "old content")
+        verify { messageRepository.updateMessageContent(testMessageId, "new content", "old content") }
     }
 
     // ============================================
@@ -352,7 +381,7 @@ class MessageServiceTest {
     @Test
     fun `deleteMessage should throw MessageNotFoundException when message does not exist`() {
         // Given
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.empty())
+        every { messageRepository.findById(testMessageId) } returns Optional.empty()
 
         // When & Then
         assertThrows<MessageNotFoundException> {
@@ -370,7 +399,7 @@ class MessageServiceTest {
             senderId = otherUserId,
             encryptedContent = "content"
         )
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.of(message))
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
 
         // When & Then
         val exception = assertThrows<MessageAccessDeniedException> {
@@ -389,7 +418,7 @@ class MessageServiceTest {
             encryptedContent = "content",
             status = MessageStatus.DELETED
         )
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.of(message))
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
 
         // When & Then
         val exception = assertThrows<BadRequestException> {
@@ -407,14 +436,14 @@ class MessageServiceTest {
             senderId = testUserId,
             encryptedContent = "content"
         )
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.of(message))
-        `when`(messageRepository.softDeleteMessage(testMessageId)).thenReturn(true)
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
+        every { messageRepository.softDeleteMessage(testMessageId) } returns true
 
         // When
         messageService.deleteMessage(testMessageId, testUserId)
 
         // Then
-        verify(messageRepository).softDeleteMessage(testMessageId)
+        verify { messageRepository.softDeleteMessage(testMessageId) }
     }
 
     // ============================================
@@ -424,7 +453,7 @@ class MessageServiceTest {
     @Test
     fun `markMessageAsRead should throw MessageNotFoundException when message does not exist`() {
         // Given
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.empty())
+        every { messageRepository.findById(testMessageId) } returns Optional.empty()
 
         // When & Then
         assertThrows<MessageNotFoundException> {
@@ -441,23 +470,23 @@ class MessageServiceTest {
             senderId = UUID.randomUUID(),
             encryptedContent = "content"
         )
-        val membership = ChannelMembers(channelId = testChannelId, userId = testUserId, isActive = true)
+        val membership = createMembership()
         val existingRead = MessageReads(
             messageId = testMessageId,
             channelId = testChannelId,
             userId = testUserId
         )
 
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.of(message))
-        `when`(channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId)).thenReturn(membership)
-        `when`(messageReadsRepository.findByMessageIdAndUserId(testMessageId, testUserId)).thenReturn(existingRead)
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns membership
+        every { messageReadsRepository.findByMessageIdAndUserId(testMessageId, testUserId) } returns existingRead
 
         // When
         val result = messageService.markMessageAsRead(testMessageId, testUserId)
 
         // Then
         assertTrue(result)
-        verify(messageReadsRepository, never()).save(any(MessageReads::class.java))
+        verify(exactly = 0) { messageReadsRepository.save(any<MessageReads>()) }
     }
 
     @Test
@@ -469,18 +498,19 @@ class MessageServiceTest {
             senderId = UUID.randomUUID(),
             encryptedContent = "content"
         )
-        val membership = ChannelMembers(channelId = testChannelId, userId = testUserId, isActive = true)
+        val membership = createMembership()
 
-        `when`(messageRepository.findById(testMessageId)).thenReturn(Optional.of(message))
-        `when`(channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId)).thenReturn(membership)
-        `when`(messageReadsRepository.findByMessageIdAndUserId(testMessageId, testUserId)).thenReturn(null)
+        every { messageRepository.findById(testMessageId) } returns Optional.of(message)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns membership
+        every { messageReadsRepository.findByMessageIdAndUserId(testMessageId, testUserId) } returns null
+        every { messageReadsRepository.save(any<MessageReads>()) } returns mockk()
 
         // When
         val result = messageService.markMessageAsRead(testMessageId, testUserId)
 
         // Then
         assertFalse(result)
-        verify(messageReadsRepository).save(any(MessageReads::class.java))
+        verify { messageReadsRepository.save(any<MessageReads>()) }
     }
 
     // ============================================
@@ -490,7 +520,7 @@ class MessageServiceTest {
     @Test
     fun `getUnreadMessageCount should throw ChannelAccessDeniedException when user has no access`() {
         // Given
-        `when`(channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId)).thenReturn(null)
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns null
 
         // When & Then
         assertThrows<ChannelAccessDeniedException> {
@@ -501,18 +531,15 @@ class MessageServiceTest {
     @Test
     fun `getUnreadMessageCount should return count for valid member`() {
         // Given
-        val membership = ChannelMembers(
-            channelId = testChannelId,
-            userId = testUserId,
-            isActive = true,
-            lastReadAt = LocalDateTime.now().minusHours(1)
-        )
-        `when`(channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId)).thenReturn(membership)
-        `when`(messageReadsRepository.countUnreadMessagesByChannelAndUser(
-            eq(testChannelId),
-            eq(testUserId),
-            any()
-        )).thenReturn(5L)
+        val membership = createMembership(lastReadAt = LocalDateTime.now().minusHours(1))
+        every { channelMembersRepository.findByChannelIdAndUserId(testChannelId, testUserId) } returns membership
+        every {
+            messageReadsRepository.countUnreadMessagesByChannelAndUser(
+                testChannelId,
+                testUserId,
+                any<LocalDateTime>()
+            )
+        } returns 5L
 
         // When
         val result = messageService.getUnreadMessageCount(testChannelId, testUserId)
