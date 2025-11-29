@@ -246,7 +246,7 @@ async function loadChannels() {
     channelList.innerHTML = '<p>채널을 불러오는 중...</p>';
 
     try {
-        const response = await fetch(`${API_BASE}/channels`, {
+        const response = await fetch(`${API_BASE}/chat/channels`, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
 
@@ -294,7 +294,7 @@ async function selectChannel(channelId) {
 
     // 채널 정보 표시
     try {
-        const response = await fetch(`${API_BASE}/channels/${channelId}`, {
+        const response = await fetch(`${API_BASE}/chat/channels/${channelId}`, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
 
@@ -307,7 +307,7 @@ async function selectChannel(channelId) {
             document.getElementById('currentChannelType').textContent = channel.type;
 
             // 채널 멤버 표시 및 캐시에 저장
-            const memberResponse = await fetch(`${API_BASE}/channels/${channelId}/members`, {
+            const memberResponse = await fetch(`${API_BASE}/chat/channels/${channelId}/members`, {
                 headers: { 'Authorization': `Bearer ${accessToken}` }
             });
             const memberData = await memberResponse.json();
@@ -339,7 +339,7 @@ async function loadMessages() {
     messagesContainer.innerHTML = '<p>메시지를 불러오는 중...</p>';
 
     try {
-        const response = await fetch(`${API_BASE}/channels/${currentChannelId}/messages?page=0&size=50`, {
+        const response = await fetch(`${API_BASE}/chat/channels/${currentChannelId}/messages?page=0&size=50`, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
 
@@ -474,7 +474,7 @@ async function sendMessageViaHttp(content) {
     const messageInput = document.getElementById('messageInput');
     
     try {
-        const response = await fetch(`${API_BASE}/channels/${currentChannelId}/messages`, {
+        const response = await fetch(`${API_BASE}/chat/channels/${currentChannelId}/messages`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -635,7 +635,7 @@ async function createChannel() {
 
         console.log('채널 생성 요청:', requestBody);
 
-        const response = await fetch(`${API_BASE}/channels`, {
+        const response = await fetch(`${API_BASE}/chat/channels`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -664,7 +664,7 @@ async function createChannel() {
 
                 for (const userId of userIds) {
                     try {
-                        const inviteResponse = await fetch(`${API_BASE}/channels/${channelId}/members`, {
+                        const inviteResponse = await fetch(`${API_BASE}/chat/channels/${channelId}/members`, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
