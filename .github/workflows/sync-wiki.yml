@@ -107,28 +107,27 @@ jobs:
           echo "Generated wiki files:"
           find docs/wiki -name "*.md" -type f | sort
 
-      - name: Checkout wiki repository
-        id: checkout-wiki
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository }}.wiki
-          path: wiki
-          token: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
-
-      - name: Check if wiki exists
+      - name: Clone wiki repository
         id: wiki-check
         run: |
-          if [ -d "wiki/.git" ]; then
+          echo "Attempting to clone wiki repository..."
+          if git clone --depth 1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git wiki 2>/dev/null; then
             echo "wiki_exists=true" >> $GITHUB_OUTPUT
-            echo "Wiki repository exists"
+            echo "Wiki repository cloned successfully"
           else
             echo "wiki_exists=false" >> $GITHUB_OUTPUT
-            echo "::warning::Wiki repository not found. Please create the wiki first:"
-            echo "::warning::1. Go to https://github.com/${{ github.repository }}/wiki"
-            echo "::warning::2. Click 'Create the first page'"
-            echo "::warning::3. Save any content to initialize the wiki"
-            echo "::warning::4. Re-run this workflow"
+            echo ""
+            echo "=========================================="
+            echo "⚠️  Wiki repository not found!"
+            echo "=========================================="
+            echo ""
+            echo "To initialize the wiki:"
+            echo "1. Go to: https://github.com/${{ github.repository }}/wiki"
+            echo "2. Click 'Create the first page'"
+            echo "3. Add any content and save"
+            echo "4. Re-run this workflow"
+            echo ""
+            echo "Generated docs will be available in workflow artifacts."
           fi
 
       - name: Sync documentation to wiki
@@ -157,16 +156,15 @@ jobs:
 
             # Push changes
             git push origin master || git push origin HEAD:master
-            echo "Wiki updated successfully"
+            echo "✅ Wiki updated successfully"
           else
             echo "No changes to wiki"
           fi
 
-      - name: Skip wiki sync (wiki not initialized)
+      - name: Wiki not initialized
         if: steps.wiki-check.outputs.wiki_exists != 'true'
         run: |
-          echo "Skipping wiki sync - wiki repository needs to be initialized first"
-          echo "Generated documentation is available in the artifacts"
+          echo "📦 Generated documentation available in workflow artifacts"
 
       - name: Upload OpenAPI spec as artifact
         uses: actions/upload-artifact@v4
