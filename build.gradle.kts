@@ -4,6 +4,7 @@ plugins {
     kotlin("plugin.jpa") version "1.9.25"  // JPA 엔티티를 위한 no-arg 생성자 자동 생성
     id("org.springframework.boot") version "3.5.7"
     id("io.spring.dependency-management") version "1.1.7"
+    id("org.springdoc.openapi-gradle-plugin") version "1.9.0"
 }
 
 group = "com.august"
@@ -96,4 +97,62 @@ kotlin {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+// ============================================
+// OpenAPI Documentation Generation
+// ============================================
+
+openApi {
+    apiDocsUrl.set("http://localhost:8080/v3/api-docs")
+    outputDir.set(layout.buildDirectory.dir("openapi"))
+    outputFileName.set("openapi.json")
+    waitTimeInSeconds.set(60)
+}
+
+// Task to generate wiki documentation from OpenAPI spec
+tasks.register("generateWikiDocs") {
+    group = "documentation"
+    description = "Generates GitHub Wiki Markdown from OpenAPI specification"
+    dependsOn("generateOpenApiDocs")
+
+    doLast {
+        val openApiFile = layout.buildDirectory.file("openapi/openapi.json").get().asFile
+        val wikiDir = file("docs/wiki")
+
+        if (!openApiFile.exists()) {
+            throw GradleException("OpenAPI spec not found at ${openApiFile.absolutePath}. Run generateOpenApiDocs first.")
+        }
+
+        // Create wiki directory structure
+        wikiDir.mkdirs()
+        file("docs/wiki/endpoints").mkdirs()
+
+        println("Wiki documentation directory prepared at: ${wikiDir.absolutePath}")
+        println("Run the wiki generator script: ./scripts/generate-wiki.sh")
+    }
+}
+
+// Task to validate OpenAPI spec
+tasks.register("validateOpenApi") {
+    group = "documentation"
+    description = "Validates the generated OpenAPI specification"
+    dependsOn("generateOpenApiDocs")
+
+    doLast {
+        val openApiFile = layout.buildDirectory.file("openapi/openapi.json").get().asFile
+        if (!openApiFile.exists()) {
+            throw GradleException("OpenAPI spec not found")
+        }
+
+        val content = openApiFile.readText()
+        if (!content.contains("\"openapi\"")) {
+            throw GradleException("Invalid OpenAPI spec: missing openapi version")
+        }
+        if (!content.contains("\"paths\"")) {
+            throw GradleException("Invalid OpenAPI spec: missing paths")
+        }
+
+        println("OpenAPI specification validated successfully")
+    }
 }

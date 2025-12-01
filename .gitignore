@@ -42,8 +42,8 @@ out/
 ### Firebase ###
 **/firebase-service-account.json
 !src/main/resources/firebase-service-account.example.json
-# 테스트 클라이언트 Firebase 설정 파일 (민감 정보)
-test-client/firebase-config.js
+# Test client directory (entire directory ignored)
+test-client/
 
 ### AWS & Deployment Configuration (SENSITIVE) ###
 # ECS task definitions may contain secrets/credentials
@@ -63,8 +63,6 @@ src/main/resources/application-prod.yml
 .env
 .env.local
 .env.*.local
-# Test client configuration with production URLs
-test-client/config.js
 
 ### Log Files ###
 *.log

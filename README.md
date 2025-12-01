@@ -169,21 +169,57 @@ GET /api/v1/admin/dashboard/metrics
 ## 📖 Additional Documentation
 
 - **API Documentation**: Swagger UI at http://localhost:8080/swagger-ui.html
+- **GitHub Wiki**: Auto-generated API documentation in the [project wiki](../../wiki)
 - **Encryption API Guide**: `documents/guides/ENCRYPTION_API_GUIDE.md` - Complete integration guide for E2E encryption
 - **Security Best Practices**: `documents/guides/ENCRYPTION_SECURITY_BEST_PRACTICES.md` - Security guidelines
 - **Metrics Guide**: `documents/guides/METRICS_GUIDE.md` - How to query encryption metrics
+- **Wiki Pipeline Guide**: `documents/guides/WIKI_DOCUMENTATION_PIPELINE.md` - How wiki docs are generated
 - **Project Specifications**: See `documents/specifications/` folder
   - `chat-sdk-spec.md` - Complete SDK specification
   - `database-schema.md` - Database schema documentation
   - `notification-system-spec.md` - Notification system specification
 - **Code Examples**: See `documents/examples/` folder
   - `encryption-flow.js` - Complete JavaScript integration example
-- **Task Lists**: See `documents/tasks/` folder
-  - `today-tasks.md` - Current development tasks
+
+## 📝 Documentation Pipeline
+
+API documentation is automatically generated from code and synced to GitHub Wiki.
+
+### How it works
+
+```
+Spring Controllers → OpenAPI Spec → Markdown → GitHub Wiki
+      ↓                   ↓              ↓           ↓
+  Annotations       springdoc      scripts/     GitHub Actions
+  (@Operation)     generateOpenApiDocs  generate-wiki.sh   sync-wiki.yml
+```
+
+### Generate documentation locally
+
+```bash
+# Generate OpenAPI spec (starts app temporarily)
+./gradlew generateOpenApiDocs
+
+# Convert to Markdown wiki pages
+./scripts/generate-wiki.sh
+
+# Preview at docs/wiki/
+open docs/wiki/Home.md
+```
+
+### Automatic sync
+
+Documentation is automatically synced to GitHub Wiki when:
+- Controllers or DTOs are modified on `master`
+- OpenAPI config changes
+- Manual workflow dispatch
+
+See `documents/guides/WIKI_DOCUMENTATION_PIPELINE.md` for details.
 
 **That's it!**
 
 - API 문서: Swagger UI가 자동 생성 (항상 최신)
+- GitHub Wiki: CI에서 자동 생성 및 동기화
 - 코드 설명: 각 클래스의 KDoc 주석
 - 설정: `application.yml` 파일
 - 프로젝트 스펙: `documents/specifications/` 폴더
