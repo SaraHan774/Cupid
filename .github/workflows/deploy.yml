@@ -18,7 +18,7 @@ jobs:
   deploy:
     name: Build and Deploy
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -40,22 +40,42 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Build Docker image
+    - name: Set image tag
+      id: image-tag
       run: |
-        docker build -t $ECR_REPOSITORY:$GITHUB_SHA .
-        docker tag $ECR_REPOSITORY:$GITHUB_SHA ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$GITHUB_SHA
-        docker tag $ECR_REPOSITORY:$GITHUB_SHA ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
+        # Use short SHA for cleaner image tags
+        SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+        echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+        echo "Image tag: ${SHORT_SHA}"
+
+    - name: Build and tag Docker image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ steps.image-tag.outputs.short_sha }}
+      run: |
+        echo "Building image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+        docker build -t ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} .
+        docker tag ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest
 
     - name: Push Docker image to ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ steps.image-tag.outputs.short_sha }}
       run: |
-        docker push ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$GITHUB_SHA
-        docker push ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
+        docker push ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+        docker push ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest
 
-    - name: Download task definition
+    - name: Download and clean task definition
       run: |
+        # Download task definition and remove fields that prevent registration
         aws ecs describe-task-definition \
           --task-definition ${{ env.ECS_TASK_DEFINITION }} \
-          --query taskDefinition > task-definition.json
+          --query 'taskDefinition' | \
+        jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+          > task-definition.json
+
+        echo "Task definition:"
+        cat task-definition.json
 
     - name: Fill in the new image ID in the Amazon ECS task definition
       id: task-def
@@ -63,10 +83,10 @@ jobs:
       with:
         task-definition: task-definition.json
         container-name: cupid-backend
-        image: ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$GITHUB_SHA
+        image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.image-tag.outputs.short_sha }}
 
     - name: Deploy Amazon ECS task definition
-      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v2
       with:
         task-definition: ${{ steps.task-def.outputs.task-definition }}
         service: ${{ env.ECS_SERVICE }}
