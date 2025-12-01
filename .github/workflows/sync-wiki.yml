@@ -108,6 +108,7 @@ jobs:
           find docs/wiki -name "*.md" -type f | sort
 
       - name: Checkout wiki repository
+        id: checkout-wiki
         uses: actions/checkout@v4
         with:
           repository: ${{ github.repository }}.wiki
@@ -115,16 +116,23 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
 
-      - name: Initialize wiki if not exists
+      - name: Check if wiki exists
+        id: wiki-check
         run: |
-          if [ ! -d "wiki/.git" ]; then
-            mkdir -p wiki
-            cd wiki
-            git init
-            git remote add origin https://github.com/${{ github.repository }}.wiki.git
+          if [ -d "wiki/.git" ]; then
+            echo "wiki_exists=true" >> $GITHUB_OUTPUT
+            echo "Wiki repository exists"
+          else
+            echo "wiki_exists=false" >> $GITHUB_OUTPUT
+            echo "::warning::Wiki repository not found. Please create the wiki first:"
+            echo "::warning::1. Go to https://github.com/${{ github.repository }}/wiki"
+            echo "::warning::2. Click 'Create the first page'"
+            echo "::warning::3. Save any content to initialize the wiki"
+            echo "::warning::4. Re-run this workflow"
           fi
 
       - name: Sync documentation to wiki
+        if: steps.wiki-check.outputs.wiki_exists == 'true'
         run: |
           # Copy all generated markdown files to wiki
           cp -r docs/wiki/* wiki/
@@ -153,6 +161,12 @@ jobs:
           else
             echo "No changes to wiki"
           fi
+
+      - name: Skip wiki sync (wiki not initialized)
+        if: steps.wiki-check.outputs.wiki_exists != 'true'
+        run: |
+          echo "Skipping wiki sync - wiki repository needs to be initialized first"
+          echo "Generated documentation is available in the artifacts"
 
       - name: Upload OpenAPI spec as artifact
         uses: actions/upload-artifact@v4
